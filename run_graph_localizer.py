@@ -133,7 +133,7 @@ def run_localizer():
     session.init()
 
     T0 = initial_aruco_localization(session=session, map=map, Tlidar_gps=Tlidar_gps, Tlidar_cam=Tlidar_cam)
-
+    # map.plot_path(T0)
 
     # create the graphLocalizer
     # Add the landmarks as constant factors
