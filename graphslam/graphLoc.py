@@ -54,7 +54,7 @@ ODO_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([odo_rpy_sigma*np.pi/180,
 # GPS_NOISE = gtsam.Point3(gps_xy_sigma, gps_xy_sigma, gps_altitude_sigma)
 
 
-class GraphSLAM():
+class GraphLoc():
     def __init__(self, T0, Tlidar_gps, Tlidar_cam, skip_optimization, max_number_of_landmarks=1000):
         self.graph = gtsam.NonlinearFactorGraph()
         self.initial_estimate = gtsam.Values()

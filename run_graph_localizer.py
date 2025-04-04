@@ -16,7 +16,7 @@ from observations.gpsarray import GPSArray
 from observations.posesarray import PosesArray, ArucoPosesArray
 import getopt
 import sys
-from graphslam.graphSLAM import GraphSLAM
+from graphslam.graphLoc import GraphSLAM
 import matplotlib.pyplot as plt
 from map.map import Map
 from session.session import Session
@@ -73,8 +73,6 @@ def load_experiment(directory):
 
 
 def initial_aruco_localization(session, map, **kwargs):
-    # Tlidar_gps = kwargs.get('Tlidar_gps')
-    # Tlidar_gps = kwargs.get('Tlidar_gps')
     T0 = None
     while True:
         observations = session.get_next_observations()
@@ -121,8 +119,8 @@ def run_localizer():
     map = Map()
     map.read_data(directory=map_directory)
     # methods
-    # compute_transforms: given the state x and pointcloud pc, find 2-3 closest pointclouds
-    # localize_with_aruco: given an aruco observation, compute an approximate location in the map.
+
+
 
     # load the observations
     odoobsarray, smobsarray, arucoobsarray, gpsobsarray, lidarscanarray = load_experiment(session_directory)
@@ -131,8 +129,13 @@ def run_localizer():
     # timesteps. i.e. obtain odo, imu, LiDAR.
     session = Session(odo=odoobsarray, smodo=smobsarray, aruco=arucoobsarray, gps=gpsobsarray, lidar=lidarscanarray)
     session.init()
+    use_aruco_initial_localization = True
 
-    T0 = initial_aruco_localization(session=session, map=map, Tlidar_gps=Tlidar_gps, Tlidar_cam=Tlidar_cam)
+    # use the known arucos to find an initial localization
+    if use_aruco_initial_localization:
+        T0 = initial_aruco_localization(session=session, map=map, Tlidar_gps=Tlidar_gps, Tlidar_cam=Tlidar_cam)
+    else:
+        T0 = HomogeneousMatrix()
     # map.plot_path(T0)
 
     # create the graphLocalizer
@@ -151,12 +154,41 @@ def run_localizer():
     graphloc = GraphLoc(T0=T0, Tlidar_gps=Tlidar_gps, Tlidar_cam=Tlidar_cam, skip_optimization=skip_optimization)
     graphloc.init_graph()
     graphloc.init_pointcloud_landmarks(map=map)
-    # odo_times = odoobsarray.get_times()
-    # for i in range(len(odo_times)):
+    # this is trying to simulate that a number of observations are received at each time
+    # decisions have to be made to include these observations in the GraphLocalizer
+    # save two smodos at two times. Find interpolations for the times in the graphloc between the two times
+    # also for GPS measurements
+    #!temp_sm = TempSMInterp()
+    #!temp_gps = TempGPSInterp()
     while True:
         observations = session.get_next_observations()
         if len(observations) == 0:
+            print('ENDED OBSERVATIONS!')
             break
+        for observation in observations:
+            if observation[0] == 'ODO':
+
+            if observation[0] == 'LIDAR':
+                ########################################
+                # compute_map_edges
+                # compute a number of transformations between the current lidar pointcloud and the pointclouds L(j)
+                # in the map.
+                # given time_lidar, find the closest state Xi in the graph.
+                # find 2-3 closest pointclouds in the map and compute a registration between the pointcloud and the map.
+                # initial estimation for registration: the transformation between the state Xi and the pointcloud j.
+                # compute_transforms: given the state x and pointcloud pc, find 2-3 closest pointclouds
+                #! edges_map = map.compute_map_edges(time_lidar, lidar_observation)
+                ########################################
+                # add the edges to the graphlocalizer
+                #! graphloc.add_edges_landmarks(edges, landmarks)
+            #if observation[0] == 'SMODO':
+                ################################
+                # integrate sequential scanmatching
+                #
+                # graphloc.add_odo_edge()
+            #if observation[0] == 'GPS':
+
+        graphloc.optimize()
 
     graphloc.save_solution(directory=directory, scan_times=lidarscanarray.get_times())
 
