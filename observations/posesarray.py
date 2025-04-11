@@ -248,7 +248,7 @@ class ArucoLandmarksPosesArray(PosesArray):
 
 
 class Pose():
-    def __init__(self, df):
+    def __init__(self, df=None):
         """
         Create a pose from pandas df
         """
@@ -258,6 +258,13 @@ class Pose():
         else:
             self.position = None
             self.quaternion = None
+
+    def from_message(self, msg):
+        pos = msg.position
+        ori = msg.orientation
+        self.position = Vector([pos.x, pos.y, pos.z])
+        self.quaternion = Quaternion(qx=ori.x, qy=ori.y, qz=ori.z, qw=ori.w)
+        return self
 
     def from_transform(self, T):
         self.position = Vector(T.pos())

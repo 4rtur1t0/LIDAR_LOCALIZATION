@@ -4,163 +4,180 @@ We are integrating odometry, scanmatching odometry and (if present) GPS.
     The state X is the position and orientation frame of the robot, placed on the GPS sensor.
 
 """
+import rospy
 import numpy as np
+from nav_msgs.msg import Odometry
+from sensor_msgs.msg import NavSatFix
+from geometry_msgs.msg import PoseWithCovarianceStamped
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from graphslam.graphSLAM import GraphSLAM
 from artelib.homogeneousmatrix import HomogeneousMatrix
 from artelib.vector import Vector
 from artelib.euler import Euler
-from graphslam.loopclosing import LoopClosing
-from graphslam.helper_functions import process_odometry, process_gps, process_aruco_landmarks, \
-    process_triplets_scanmatching, plot_sensors, process_loop_closing_lidar
-from lidarscanarray.lidarscanarray import LiDARScanArray
-from observations.gpsarray import GPSArray
-from observations.posesarray import PosesArray, ArucoPosesArray
-import getopt
-import sys
-from graphslam.graphSLAM import GraphSLAM
-import matplotlib.pyplot as plt
-from map.map import Map
-from session.session import Session
+from observations.posesarray import Pose
+from config import PARAMETERS
+from tools.gpsconversions import gps2utm
+
+fig, ax = plt.subplots()
+canvas = FigureCanvas(fig)
 
 
-def find_options():
-    argv = sys.argv[1:]
-    euroc_path = None
-    try:
-        opts, args = getopt.getopt(argv, "hi:", ["ifile="])
-    except getopt.GetoptError:
-        print('python run_graphSLAM.py -i <euroc_directory>')
-        sys.exit(2)
-    for opt, arg in opts:
-        if opt == '-h':
-            print('python run_graphSLAM.py -i <euroc_directory>')
-            sys.exit()
-        elif opt in ("-i", "--ifile"):
-            euroc_path = arg
-    print('Input find_options directory is: ', euroc_path)
-    return euroc_path
+
+def convert_and_filter_gps(msg):
+    max_sigma_xy = PARAMETERS.config.get('gps').get('max_sigma_xy')
+    min_status = PARAMETERS.config.get('gps').get('min_status')
+    if msg.status.status < min_status:
+        return None
+    sigma_xy = np.sqrt(msg.position_covariance[0])
+    if sigma_xy > max_sigma_xy:
+        return None
+    df_gps = {'latitude': msg.latitude,
+              'longitude': msg.longitude,
+              'altitude': msg.altitude}
+    # status = df_gps['status']
+    # base reference system
+    config_ref = {}
+    config_ref['latitude'] = PARAMETERS.config.get('gps').get('utm_reference').get('latitude')
+    config_ref['longitude'] = PARAMETERS.config.get('gps').get('utm_reference').get('longitude')
+    config_ref['altitude'] = PARAMETERS.config.get('gps').get('utm_reference').get('altitude')
+    df_utm = gps2utm(df_gps, config_ref)
+    # convert to utm
+    return df_utm
 
 
-def load_experiment(directory):
-    # odometry
-    odoobsarray = PosesArray()
-    odoobsarray.read_data(directory=directory, filename='/robot0/odom/data.csv')
-    # scanmatcher
-    smobsarray = PosesArray()
-    smobsarray.read_data(directory=directory, filename='/robot0/scanmatcher/data.csv')
-    # ARUCO observations. In the camera reference frame
-    arucoobsarray = ArucoPosesArray()
-    arucoobsarray.read_data(directory=directory, filename='/robot0/aruco/data.csv')
-    # remove spurious ARUCO IDs
-    arucoobsarray.filter_aruco_ids()
-    # gpsobservations
-    gpsobsarray = GPSArray()
-    gpsobsarray.read_data(directory=directory, filename='/robot0/gps0/data.csv')
-    gpsobsarray.read_config_ref(directory=directory)
-    gpsobsarray.filter_measurements()
-    # gpsobsarray.plot_xyz_utm()
-    # Plot initial sensors as raw data
-    # plot_sensors(odoarray=odoobsarray, smarray=smobsarray, gpsarray=gpsobsarray)
-    # create scan Array, We are actually estimating the poses at which
-    lidarscanarray = LiDARScanArray(directory=directory)
-    lidarscanarray.read_parameters()
-    lidarscanarray.read_data()
-    # remove scans without corresponding odometry (in consequence, without scanmatching)
-    lidarscanarray.remove_orphan_lidars(pose_array=odoobsarray)
-    lidarscanarray.remove_orphan_lidars(pose_array=smobsarray)
-    # load the scans according to the times, do not load the corresponding pointclouds
-    lidarscanarray.add_lidar_scans()
-    return odoobsarray, smobsarray, arucoobsarray, gpsobsarray, lidarscanarray
+class LocalizationNode:
+    def __init__(self):
+        print('Initializing localization node!')
+        rospy.init_node('localization_node')
+        print('Subscribing to ODOMETRY, GNSS')
+        print('WAITING FOR MESSAGES!')
+        # Subscriptions
+        rospy.Subscriber('/husky_velocity_controller/odom', Odometry, self.odom_callback)
+        rospy.Subscriber('/gnss/fix', NavSatFix, self.gps_callback)
+        # Set up a timer to periodically update the plot
+        rospy.Timer(rospy.Duration(2), self.timer_callback)
+        # Publisher
+        self.pub = rospy.Publisher('/localized_pose', Odometry, queue_size=10)
+        T0 = HomogeneousMatrix()
+        # T LiDAR-GPS
+        Tlidar_gps = HomogeneousMatrix(Vector([0.36, 0, -0.4]), Euler([0, 0, 0]))
+        # T LiDAR-camera
+        Tlidar_cam = HomogeneousMatrix(Vector([0, 0.17, 0]), Euler([0, np.pi / 2, -np.pi / 2]))
+        # create the graphslam graph
+        self.graphslam = GraphSLAM(T0=T0, Tlidar_gps=Tlidar_gps, Tlidar_cam=Tlidar_cam)
+        self.graphslam.init_graph()
 
+        self.skip_optimization = 200
+        # Odom
+        self.posei = None
+        self.posej = None
+        self.current_key = 0
 
-def initial_aruco_localization(session, map, **kwargs):
-    # Tlidar_gps = kwargs.get('Tlidar_gps')
-    # Tlidar_gps = kwargs.get('Tlidar_gps')
-    T0 = None
-    while True:
-        observations = session.get_next_observations()
-        for observation in observations:
-            if observation[0] == 'ARUCO':
-                # T0: Define the initial transformation (Prior for GraphSLAM)
-                # T0 = HomogeneousMatrix()
-                Tca = observation[1].T()
-                aruco_id = observation[2]
-                # localize with aruco, compute T0 for GraphLoc
-                T0 = map.localize_with_aruco(Tca, aruco_id, **kwargs)
-                break
-        if T0 is None:
-            print('ERROR: no ARUCO found for initial localization. Follow up!')
-        else:
-            return T0
+        # gps
+        self.last_gps = None
+        self.utm_valid_positions = []
+        # time
+        self.start_time = 0
 
+    def odom_callback(self, msg):
+        print('Received odo measurement')
+        print('Current key is: ', self.current_key)
+        timestamp = msg.header.stamp.to_sec()
+        print('Current experiment time is: ', timestamp-self.start_time)
+        if self.posei is None:
+            posei = Pose()
+            posei.from_message(msg.pose.pose)
+            self.posei = posei
+            self.start_time = timestamp
+            return
+        posej = Pose()
+        posej.from_message(msg.pose.pose)
+        self.posej = posej
+        Ti = self.posei.T()
+        Tj = self.posej.T()
+        Tij = Ti.inv()*Tj
+        self.graphslam.add_initial_estimate(Tij, self.current_key + 1)
+        self.graphslam.add_edge(Tij, self.current_key, self.current_key + 1, 'ODO')
+        self.current_key += 1
+        self.posei = self.posej
 
-def run_localizer():
-    """
-    The localizer loop
-    """
-    map_directory = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
-    session_directory = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
+        if self.last_gps is not None:
+            print('ADDING GPS FACTOR')
+            print(30*'=')
+            self.graphslam.add_GPSfactor(utmx=self.last_gps['x'],
+                                         utmy=self.last_gps['y'],
+                                         utmaltitude=self.last_gps['altitude'],
+                                         gpsnoise=None, i=self.current_key)
+            self.utm_valid_positions.append([self.last_gps['x'], self.last_gps['y']])
+            self.last_gps = None
 
-    # Caution: Actually, we are estimating the position and orientation of the GPS at this position at the robot.
-    # T LiDAR-GPS
-    Tlidar_gps = HomogeneousMatrix(Vector([0.36, 0, -0.4]), Euler([0, 0, 0]))
-    # T LiDAR-camera
-    Tlidar_cam = HomogeneousMatrix(Vector([0, 0.17, 0]), Euler([0, np.pi / 2, -np.pi / 2]))
-    # Try to visualize an ARUCO and compute T0. Define a low uncertainty prior
+        if self.current_key % self.skip_optimization == 0:
+            print('GRAPHSLAM OPTIMIZE')
+            print(50 * '*')
+            # reinit graph!
+            self.graphslam.optimize()
 
+        # get last solution and publish
+        last_sol = self.graphslam.get_solution_last(self.current_key)
+        self.publish_pose(last_sol)
 
-    # The map object.
-    # Stores the pointclouds along with the poses. Each poincloud is identified by the time
-    # Stores the ARUCO landmarks
-    # may store more than one map. i.e. more than one path with the pointclouds
+    def gps_callback(self, msg):
+        # Convert lat/lon to dummy XYZ — replace with ENU or UTM in real use
+        print(30*'$')
+        print('Received GPS reading')
+        print(msg.status)
+        print('Sigma is: ',
 
-    # Functions.
-    # Given a pose t, allows to find a set of pointclouds and compute transformations in triangle
-    # alternatively, transformations between i and j
-    # maybe threaded
-    # --> copy the LoopClosing object
-    map = Map()
-    map.read_data(directory=map_directory)
-    # methods
-    # compute_transforms: given the state x and pointcloud pc, find 2-3 closest pointclouds
-    # localize_with_aruco: given an aruco observation, compute an approximate location in the map.
+              np.sqrt(msg.position_covariance[0]))
+        print(30 * '$')
+        self.last_gps = convert_and_filter_gps(msg)
+        if self.last_gps is None:
+            print(30 * '?')
+            print("Received non-valid GPS reading!")
+            print(30 * '?')
+            return
+        print(30*'*')
+        print("Received valid GPS reading!!")
+        print(30 * '*')
 
-    # load the observations
-    odoobsarray, smobsarray, arucoobsarray, gpsobsarray, lidarscanarray = load_experiment(session_directory)
-    # create an Experiment object.
-    # stores all the times in a vector of times. The observations can be obtained at all the times or at different
-    # timesteps. i.e. obtain odo, imu, LiDAR.
-    session = Session(odo=odoobsarray, smodo=smobsarray, aruco=arucoobsarray, gps=gpsobsarray, lidar=lidarscanarray)
-    session.init()
+    def publish_pose(self, T):
+        if T is None:
+            return
+        print('Publishing last pose:')
+        position = T.pos()# print(pose)
+        orientation = T.Q()
+        msg = Odometry()
+        msg.header.stamp = rospy.Time.now()
+        msg.header.frame_id = "map"
+        msg.pose.pose.position.x = position[0]
+        msg.pose.pose.position.y = position[1]
+        msg.pose.pose.position.z = position[2]
+        # q = pose.rotation().toQuaternion()
+        msg.pose.pose.orientation.x = orientation.qx
+        msg.pose.pose.orientation.y = orientation.qy
+        msg.pose.pose.orientation.z = orientation.qz
+        msg.pose.pose.orientation.w = orientation.qw
+        self.pub.publish(msg)
 
-    T0 = initial_aruco_localization(session=session, map=map, Tlidar_gps=Tlidar_gps, Tlidar_cam=Tlidar_cam)
-    # map.plot_path(T0)
+    def timer_callback(self, event):
+        positions = self.graphslam.get_solution_positions()
+        ax.clear()
+        if len(positions) > 0:
+            ax.scatter(positions[:, 0], positions[:, 1], marker='.', color='blue')
+        if len(self.utm_valid_positions) > 0:
+            utm_valid_positions = np.array(self.utm_valid_positions)
+            ax.scatter(utm_valid_positions[:, 0],
+                       utm_valid_positions[:, 1], marker='.', color='red')
+        canvas.print_figure('plot.png', bbox_inches='tight')
 
-    # create the graphLocalizer
-    # Add the landmarks as constant factors
-    # given a odo measurement, add edge between t1 and t2
-    #           Adds state X at time t2
-    # given a pointcloud at t3, add edge between L(j) and X(t3)
-    # given a GPS measurement at t3.
-    #       add GPS factor
-    # must keep an array of times
-
-    # First: add data in a loop sequentially.
-    # second: subscribe
-    # create a function/object that returns all the times in the sensors in orders.
-    # next, the object returns for each time
-    graphloc = GraphLoc(T0=T0, Tlidar_gps=Tlidar_gps, Tlidar_cam=Tlidar_cam, skip_optimization=skip_optimization)
-    graphloc.init_graph()
-    graphloc.init_pointcloud_landmarks(map=map)
-    # odo_times = odoobsarray.get_times()
-    # for i in range(len(odo_times)):
-    while True:
-        observations = session.get_next_observations()
-        if len(observations) == 0:
-            break
-
-    graphloc.save_solution(directory=directory, scan_times=lidarscanarray.get_times())
+    def run(self):
+        rospy.spin()
 
 
 if __name__ == "__main__":
-    directory = find_options()
-    run_localizer()
+    filename = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17.bag'
+    node = LocalizationNode()
+    node.run()
+
+

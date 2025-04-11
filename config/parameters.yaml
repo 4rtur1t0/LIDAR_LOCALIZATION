@@ -1,7 +1,11 @@
 gps:
   delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
   min_status: 0 # minimum status for a GPS to be valid
-  max_sigma_xy: 8 # max xy sigma
+  max_sigma_xy: 4 # max xy sigma
+  utm_reference:
+    latitude: 38.275185
+    longitude: -0.685623
+    altitude: 160.0
 
 odo:
   delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
@@ -15,25 +19,27 @@ aruco:
 # the scanmatcher is used for sequential scanmatching and to find registrations between non-consecutive pointclouds
 scanmatcher:
   voxel_size: null # Number or null
+
   # find the closest points within this distance in ICP
-  distance_threshold: 10.0
+  icp_threshold: 10.0
+  # filter points by radius
+  min_radius: 0.5  #0.5 para no encontrarse con el robot
+  max_radius: 20 #100
+  # filter points by height
+  min_height: -2.0
+  max_height: 50.0
+  min_reflectivity: 20
 
-  filter_by_radius:
-    max_radius: 35 #100
-    min_radius: 0.5  #0.5 para no encontrarse con el robot
-
-  filter_by_height:
-    min_height: -1.0
-    max_height: 50.0
-
+  # normal computation
   normals:
-    maximum_neighbors: 300 #50
-    radius_normals: 3 #0.5
-
+    max_nn_normals: 50 #50
+    voxel_size_normals: 0.2 #0.5
+  # options
   initial_transform:
     clouds_at_same_z: true
 
-loop_closing:
+
+#loop_closing:
 #  # lazy settings, low number of loop closings
 #  d_sample_i: 10.0 # try to find triplets for this relative distance between i poses
 #  r_close1: 0.7 # the j index must be within r1 and r2 in travel distance
@@ -55,16 +61,16 @@ loop_closing:
 #  num_triplets: 3 # num of triplets generated for each triplet at every step index
 
 # epic settings, large number of loop closings, including
-  d_sample_i: 2.0 # try to find triplets for this relative distance between i poses
-  r_close1: 0.7 # the j index must be within r1 and r2 in travel distance
-  r_close2: 1.5
-  # include indices k that are within r_lc from i (and approximately from j) and r_lc_travel distance from i in terms
-  # of travel distance.
-  r_lc: 4.5 # radius for loop_closing (not travel distance)
-  r_lc_travel_distance: 3.0 # travelled distance for loop closings
-  num_triplets: 5 # num of triplets generated for each triplet at every step index
+#  d_sample_i: 2.0 # try to find triplets for this relative distance between i poses
+#  r_close1: 0.7 # the j index must be within r1 and r2 in travel distance
+#  r_close2: 1.5
+#   include indices k that are within r_lc from i (and approximately from j) and r_lc_travel distance from i in terms
+#   of travel distance.
+#  r_lc: 4.5 # radius for loop_closing (not travel distance)
+#  r_lc_travel_distance: 3.0 # travelled distance for loop closings
+#  num_triplets: 5 # num of triplets generated for each triplet at every step index
 
-map_viewer:
-  voxel_size: 0.2
-  keyframe_sampling: 20
+#map_viewer:
+#  voxel_size: 0.2
+#  keyframe_sampling: 20
 

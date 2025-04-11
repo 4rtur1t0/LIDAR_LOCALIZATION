@@ -1,41 +1,125 @@
 import time
+import bisect
+from collections import deque
 import numpy as np
 import open3d as o3d
 import copy
+from config import PARAMETERS
+import sensor_msgs.point_cloud2 as pc2
 
 
-class LiDARScan2():
-    def __init__(self, scan_time, parameters, directory):
+class LidarBuffer:
+    def __init__(self, maxlen=20):
+        """
+        given a list of scan times (ROS times), each pcd is read on demand
+        """
+        self.times = deque(maxlen=maxlen)
+        self.pointclouds = deque(maxlen=maxlen)
+        # stores the pcds that have been processed
+        self.processed = deque(maxlen=maxlen)
+        self.show_registration_result = False
+
+    def from_msg(self):
+        return
+
+    def __len__(self):
+        return len(self.times)
+
+    def __getitem__(self, item):
+        return self.pointclouds[item]
+
+    def get(self, item):
+        return self.pointclouds[item]
+
+    def append(self, pcd, time):
+        """
+        append a pcd and time to arrays
+        """
+        self.pointclouds.append(pcd)
+        self.times.append(time)
+
+    def popleft(self):
+        self.pointclouds[0].unload_pointcloud()
+        self.pointclouds.popleft()
+        self.times.popleft()
+
+    def get_time(self, index):
+        """
+        Get the time for a corresponding index
+        """
+        return self.times[index]
+
+    def get_times(self):
+        """
+        Get all the scan times
+        """
+        return self.times
+
+    def get_pcds(self):
+        return self.pointclouds
+
+    def get_at_exact_time(self, timestamp):
+        """
+        Get the pointcloud found at a exact, particular, timestamp
+        """
+        index = bisect.bisect_left(self.pointclouds, timestamp)
+        if index < len(self.times) and self.times[index] == timestamp:
+            print(f"Element {timestamp} found at index {index}")
+            return self.pointclouds[index]
+        else:
+            return None
+
+    # def unload_pointcloud(self, i):
+    #     self.pointclouds[i].unload_pointcloud()
+    #
+    # def pre_process(self, index):
+    #     self.pointclouds[index].pre_process(method=self.method)
+    #
+    # def filter_points(self, index):
+    #     self.pointclouds[index].filter_points()
+    #
+    # def estimate_normals(self, index):
+    #     self.pointclouds[index].estimate_normals()
+    #
+    # def draw_cloud(self, index):
+    #     self.pointclouds[index].draw_cloud()
+
+
+class LidarScan():
+    def __init__(self, time, pose, directory=None):
         # directory
         self.directory = directory
-        self.scan_time = scan_time
+        # time of the scan
+        self.time = time
+        # pose at which the scan was captured (maybe odometry)
+        self.pose = pose
         # the pointcloud
         self.pointcloud = None  # o3d.io.read_point_cloud(filename)
         # voxel sizes
-        # self.voxel_size = parameters.get('voxel_size', None)
-        self.voxel_size_normals = parameters.get('voxel_size_normals', None)
-        self.max_nn_estimate_normals = parameters.get('max_nn_estimate_normals', None)
+        self.voxel_size = PARAMETERS.config.get('scanmatcher').get('voxel_size', None)
+        self.voxel_size_normals = PARAMETERS.config.get('scanmatcher').get('normals').get('voxel_size_normals', None)
+        self.max_nn_estimate_normals = PARAMETERS.config.get('scanmatcher').get('normals').get('max_nn_normals', None)
         # filter
-        self.min_reflectivity = parameters.get('min_reflectivity', None)
-        self.min_radius = parameters.get('min_radius', None)
-        self.max_radius = parameters.get('max_radius', None)
-        self.min_height = parameters.get('min_height', None)
-        self.max_height = parameters.get('max_height', None)
+        self.min_reflectivity = PARAMETERS.config.get('scanmatcher').get('min_reflectivity', None)
+        self.min_radius = PARAMETERS.config.get('scanmatcher').get('min_radius', None)
+        self.max_radius = PARAMETERS.config.get('scanmatcher').get('max_radius', None)
+        self.min_height = PARAMETERS.config.get('scanmatcher').get('min_height', None)
+        self.max_height = PARAMETERS.config.get('scanmatcher').get('max_height', None)
 
     def load_pointcloud_from_msg(self, msg):
-        filename = self.directory + '/robot0/lidar/data/' + str(self.scan_time) + '.pcd'
-        print('Reading pointcloud: ', filename)
-        # Load the original complete pointcloud
-        self.pointcloud = o3d.io.read_point_cloud(filename)
+        self.time = msg.header.stamp.to_sec()
+        cloud = np.array([p[:3] for p in pc2.read_points(msg, skip_nans=True)])
+        self.pointcloud = o3d.geometry.PointCloud()
+        self.pointcloud.points = o3d.utility.Vector3dVector(cloud)
 
     def load_pointcloud(self):
-        filename = self.directory + '/robot0/lidar/data/' + str(self.scan_time) + '.pcd'
+        filename = self.directory + '/robot0/lidar/data/' + str(self.time) + '.pcd'
         print('Reading pointcloud: ', filename)
         # Load the original complete pointcloud
         self.pointcloud = o3d.io.read_point_cloud(filename)
 
     def save_pointcloud(self):
-        filename = self.directory + '/robot0/lidar/dataply/' + str(self.scan_time) + '.ply'
+        filename = self.directory + '/robot0/lidar/dataply/' + str(self.time) + '.ply'
         print('Saving pointcloud: ', filename)
         # Load the original complete pointcloud
         o3d.io.write_point_cloud(filename, self.pointcloud)
@@ -109,7 +193,7 @@ class LiDARScan2():
 
     def draw_registration_result(self, other, transformation):
         source_temp = copy.deepcopy(self.pointcloud)
-        target_temp = copy.deepcopy(other.pointcloud)
+        target_temp = copy.deepcopy(other.pcd)
         source_temp.paint_uniform_color([1, 0, 0])
         target_temp.paint_uniform_color([0, 0, 1])
         source_temp.transform(transformation)
@@ -132,6 +216,11 @@ class LiDARScan2():
         # self.pointcloud_ground_plane = None
         # self.pointcloud_non_ground_plane = None
         # self.pointcloud_fpfh = None
+
+
+
+
+
 
 
 

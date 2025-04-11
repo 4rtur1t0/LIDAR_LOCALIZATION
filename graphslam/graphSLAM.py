@@ -26,8 +26,8 @@ icp_rpy_sigma = 3
 gps_xy_sigma = 2.5
 gps_altitude_sigma = 3.0
 
-# gps_xy_sigma = 0.5
-# gps_altitude_sigma = 2.0
+gps_xy_sigma = 8
+gps_altitude_sigma = 100.0
 
 # Declare the noise models
 PRIOR_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([prior_rpy_sigma*np.pi/180,
@@ -51,11 +51,11 @@ ODO_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([odo_rpy_sigma*np.pi/180,
                                                             odo_xyz_sigma,
                                                             odo_xyz_sigma]))
 
-# GPS_NOISE = gtsam.Point3(gps_xy_sigma, gps_xy_sigma, gps_altitude_sigma)
+GPS_NOISE = gtsam.Point3(gps_xy_sigma, gps_xy_sigma, gps_altitude_sigma)
 
 
 class GraphSLAM():
-    def __init__(self, T0, Tlidar_gps, Tlidar_cam, skip_optimization, max_number_of_landmarks=1000):
+    def __init__(self, T0, Tlidar_gps, Tlidar_cam, max_number_of_landmarks=1000):
         self.graph = gtsam.NonlinearFactorGraph()
         self.initial_estimate = gtsam.Values()
         self.current_estimate = gtsam.Values()
@@ -68,7 +68,7 @@ class GraphSLAM():
         self.PRIOR_NOISE = PRIOR_NOISE
         self.SM_NOISE = SM_NOISE
         self.ODO_NOISE = ODO_NOISE
-        self.GPS_NOISE = None #gtsam.noiseModel.Diagonal.Sigmas(GPS_NOISE)
+        self.GPS_NOISE = gtsam.noiseModel.Diagonal.Sigmas(GPS_NOISE)
         # landmarks
         self.max_number_of_landmarks = max_number_of_landmarks
         # Solver parameters
@@ -76,7 +76,7 @@ class GraphSLAM():
         parameters.setRelinearizeThreshold(0.1)
         parameters.relinearizeSkip = 1
         self.isam = gtsam.ISAM2(parameters)
-        self.skip_optimization = skip_optimization
+        # self.skip_optimization = skip_optimization
 
     def init_graph(self):
         T = self.T0
@@ -131,9 +131,15 @@ class GraphSLAM():
             self.graph.add(gtsam.GPSFactor(X(i), utm, gpsnoise))
 
     def optimize(self):
+        print(50*'#')
+        print('Optimize graphslam')
         self.isam.update(self.graph, self.initial_estimate)
         self.current_estimate = self.isam.calculateEstimate()
         self.initial_estimate.clear()
+        # Reset Graph!!
+        self.graph = gtsam.NonlinearFactorGraph()
+        print('Optimize finished')
+        print(50 * '#')
 
     def select_noise(self, noise_type):
         if noise_type == 'ODO':
@@ -263,6 +269,14 @@ class GraphSLAM():
 
     def get_solution(self):
         return self.current_estimate
+
+    def get_solution_last(self, index):
+        if self.current_estimate.exists(X(index)):
+            ce = self.current_estimate.atPose3(X(index))
+            T = HomogeneousMatrix(ce.matrix())
+        else:
+            return None
+        return T
 
     def get_solution_transforms(self):
         """

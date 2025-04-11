@@ -1,24 +1,20 @@
-import time
 import numpy as np
 from artelib.homogeneousmatrix import HomogeneousMatrix
 import open3d as o3d
-
 from config import PARAMETERS
-from lidarscanarray.lidarscan import LiDARScan
-from eurocreader.eurocreader import EurocReader
-from tools.sampling import sample_times
-import yaml
 
 
 class ScanMatcher():
-    def __init__(self, lidarscanarray, icp_threshold=1):
+    """
+    COMPUTES A REGISTRATION BETWEEN two pointclouds using ICP and OPEN3D.
+    """
+    def __init__(self):
         """
         given a list of scan times (ROS times), each pcd is read on demand
         """
-        self.lidarscanarray = lidarscanarray
-        self.icp_threshold = icp_threshold
+        # self.icp_threshold = icp_threshold
 
-    def registration(self, i, j, Tij_0, method='icppointplane', show=False):
+    def registration(self, pcdi, pcdj, Tij_0, method='icppointplane', show=False):
         """
         Compute relative transformation using different methods:
         - Simple ICP.
@@ -32,11 +28,11 @@ class ScanMatcher():
             Tij_0.array[2, 3] = 0
 
         if method == 'icppointplane':
-            transform = self.registration_icp_point_plane(self.lidarscanarray[i], self.lidarscanarray[j],
+            transform = self.registration_icp_point_plane(pcdi, pcdj,
                                                           initial_transform=Tij_0.array, show=show)
         # does not require precomputation of normals
         else:
-            transform = self.registration_icp_point_point(self.lidarscanarray[i], self.lidarscanarray[j],
+            transform = self.registration_icp_point_point(pcdi, pcdj,
                                                           initial_transform=Tij_0.array, show=show)
         return transform
 
@@ -45,6 +41,7 @@ class ScanMatcher():
         use icp to compute transformation using an initial estimate.
         caution, initial_transform is a np array.
         """
+        icp_threshold = PARAMETERS.config.get('scanmatcher').get('icp_threshold')
         if initial_transform is None:
             initial_transform = np.eye(4)
         if show:
@@ -53,7 +50,7 @@ class ScanMatcher():
 
         print("Apply point-to-plane ICP. Local registration")
         reg_p2p = o3d.pipelines.registration.registration_icp(
-                            other.pointcloud, one.pointcloud, self.icp_threshold, initial_transform,
+                            other.pointcloud, one.pointcloud, icp_threshold, initial_transform,
                             o3d.pipelines.registration.TransformationEstimationPointToPlane())
         # else:
         #     print('UNKNOWN OPTION. Should be pointpoint or pointplane')
