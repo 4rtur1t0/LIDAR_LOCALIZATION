@@ -167,6 +167,7 @@ if __name__ == '__main__':
     rospy.init_node("gtsam_localizer")
     localizer = GTSAMLocalizer()
     rospy.spin()
+"""
 
 OJO! plantea etiquetar los estados en base al
 (tiempo)
@@ -216,4 +217,4 @@ self.current_index = i
 Would you like me to go ahead and apply this fix in the code?
 
 
-
+"""

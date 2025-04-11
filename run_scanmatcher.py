@@ -97,12 +97,16 @@ class ScanmatchingNode:
         Get last pcd reading and append to buffer.
         To save memory, pointclouds are appended if enough distance/angle is traversed (in odometry)
         """
+        if self.start_time is None:
+            self.start_time = msg.header.stamp.to_sec()
         print('Received pointcloud')
         timestamp = msg.header.stamp.to_sec()
-        # add first
-        if len(self.pcdbuffer.times) == 0:
-            self.add_first_pcd(timestamp=timestamp, msg=msg)
-            T0 = HomogeneousMatrix()
+        # add first pointcloud
+        #if len(self.pcdbuffer.times) == 0:
+        # only try to get the first pointcloud if we have at least one odometry meeasurement
+        if len(self.odombuffer.times) == 0:
+            odo_t0 = self.add_first_pcd(timestamp=timestamp, msg=msg)
+            T0 = odo_t0.T()
             self.global_transforms = [(T0, timestamp)]
             # no transforms published so far
             self.last_global_transform_published = -1
@@ -208,24 +212,26 @@ class ScanmatchingNode:
     def add_first_pcd(self, timestamp, msg):
         """
         Caution: this covers the case in which a LiDAR pcd has been received and:
-        a) no odometries have been found yet.
-        b) Only one has been found.
+        a) Only one has been found--> the closest time is annexed.
+        b) Or two times of odometry are found -->
         """
-        print('Received first pointcloud')
-        if len(self.odombuffer.times) == 0:
-            print('NO ODO MEASUREMENTS FOUND. WAIT FOR ODOMETRY')
-            return
-        elif len(self.odombuffer.times) == 1:
+        print('Received first pointcloud with odometry')
+        #if len(self.odombuffer.times) == 0:
+        #    print('NO ODO MEASUREMENTS FOUND. WAIT FOR ODOMETRY')
+        #    return
+        if len(self.odombuffer.times) == 1:
             print('Getting closets odo. Only one odometry measurement exists.')
             odo_t1 = self.odombuffer.closest_pose_at_time(timestamp=timestamp)
         else:
+            print('Getting interp odo. Two odometry measurements exist.')
             odo_t1 = self.odombuffer.interpolated_pose_at_time(timestamp=timestamp)
-            if odo_t1 is None:
-                print('Skipping pointcloud. No close odom found. Wait for next pointcloud')
-                return
+        if odo_t1 is None:
+            print('Skipping pointcloud. No close odom found. Wait for next pointcloud')
+            return
         pcd = LidarScan(time=timestamp, pose=odo_t1)
         pcd.load_pointcloud_from_msg(msg=msg)
         self.pcdbuffer.append(pcd=pcd, time=timestamp)
+        return odo_t1
 
 
 
