@@ -18,6 +18,9 @@ aruco:
 
 # the scanmatcher is used for sequential scanmatching and to find registrations between non-consecutive pointclouds
 scanmatcher:
+  d_poses: 0.2
+  th_poses: 0.05
+
   voxel_size: null # Number or null
 
   # find the closest points within this distance in ICP
