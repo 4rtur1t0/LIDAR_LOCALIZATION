@@ -198,3 +198,36 @@ class Pose():
 
     def R(self):
         return self.quaternion.R()
+
+
+#
+# class Pose():
+#     def __init__(self, df=None):
+#         """
+#         Create a pose from pandas df
+#         """
+#         if df is not None:
+#             self.position = Vector([df['x'], df['y'], df['z']])
+#             self.quaternion = Quaternion(qx=df['qx'], qy=df['qy'], qz=df['qz'], qw=df['qw'])
+#         else:
+#             self.position = None
+#             self.quaternion = None
+#
+#     def from_message(self, msg):
+#         pos = msg.position
+#         ori = msg.orientation
+#         self.position = Vector([pos.x, pos.y, pos.z])
+#         self.quaternion = Quaternion(qx=ori.x, qy=ori.y, qz=ori.z, qw=ori.w)
+#         return self
+#
+#     def from_transform(self, T):
+#         self.position = Vector(T.pos())
+#         self.quaternion = T.Q()
+#         return self
+#
+#     def T(self):
+#         T = HomogeneousMatrix(self.position, self.quaternion)
+#         return T
+#
+#     def R(self):
+#         return self.quaternion.R()

@@ -1,11 +1,11 @@
 import time
 import bisect
 from collections import deque
-import numpy as np
 import open3d as o3d
 import copy
 from config import PARAMETERS
 import sensor_msgs.point_cloud2 as pc2
+import numpy as np
 
 
 class LidarBuffer:
