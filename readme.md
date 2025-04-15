@@ -1,20 +1,10 @@
-STEPS NEEDED TO CREATE A MAP
+STEPS NEEDED TO LOCATE IN THE MAP
+    - Build a map. Store in a directory.
+    - Launch the ARUCO obsevations node.
+    - Launch de scanmatcher node.
+    - Launch the pose-map scanmatcher node.
+    - Launch the run_graph_localizser node.
 
-- Use extract_rosbag to extract data from a Rosbag file to the EUROC/ASL format.
-- Sensors needed:
-- odometry.
-- LiDAR.
-- GPS (OPTIONAL)
-
-
-- run the scanmatcher
-
-- run graphslam
-
-
-SCANMATCHER PARAMETERS
-
-GRAPHSLAM parameters
 
 OTHER TOOLS
 Map viewer

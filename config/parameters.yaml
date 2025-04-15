@@ -19,12 +19,13 @@ aruco:
 # the scanmatcher is used for sequential scanmatching and to find registrations between non-consecutive pointclouds
 scanmatcher:
   d_poses: 0.3
-  th_poses: 0.1
+  th_poses: 0.2
 
   voxel_size: null # Number or null
+#  voxel_size: 0.2
 
   # find the closest points within this distance in ICP
-  icp_threshold: 1.0
+  icp_threshold: 2.0
   # filter points by radius
   min_radius: 0.3  #0.5 para no encontrarse con el robot
   max_radius: 20 #100
@@ -39,7 +40,23 @@ scanmatcher:
     voxel_size_normals: 0.2 #0.5
   # options
   initial_transform:
+    # the relative initial transform for registration. Consider that the height is always the same
     clouds_at_same_z: true
+    # a delay in seconds to synchronize odometry and lidar info
+    delay_seconds_lidar_odometry: 0.2
+    # max time distance to find a valid odometry interpolation (given the lidar time, find odo)
+    # a warning is issued and no odometry is interpolated
+    delta_threshold_s: 0.15
+
+  threads:
+    # process scanmatching between pointclouds every 0.35 seconds
+    # should be approx. equal to the period between lidar scans
+    seconds_period_scanmatching_thread: 0.1
+    # publish the last transform 0.35 seconds
+    seconds_period_publish_thread: 0.5
+    # plot info in plot.png
+    seconds_period_plot_info_thread: 1.0
+
 
 
 #loop_closing:

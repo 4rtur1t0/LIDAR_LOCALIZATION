@@ -1,6 +1,7 @@
-numpy
+numpy==1.21.6
 open3d
-pandas
-matplotlib
+pandas==1.5.3
 tilemapbase
 pyproj
+gtsam
+matplotlib

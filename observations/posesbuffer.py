@@ -167,6 +167,10 @@ class PosesBuffer():
         plt.ylabel('Y (m)')
         plt.show()
 
+    def popleft(self):
+        self.poses.popleft()
+        self.times.popleft()
+
 
 class Pose():
     def __init__(self, df=None):

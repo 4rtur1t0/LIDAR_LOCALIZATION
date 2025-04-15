@@ -1,7 +1,8 @@
 """
-Using GTSAM in a GraphSLAM context.
-We are integrating odometry, scanmatching odometry and (if present) GPS.
-    The state X is the position and orientation frame of the robot, placed on the GPS sensor.
+A simple Scanmatcher for LiDAR pointclouds.
+Publishes a global estimated pose based on the first odometry reading found.
+No GPS or IMU is integrated.
+Uses Open3d for ICP
 
 """
 import rospy
@@ -48,19 +49,21 @@ class ScanmatchingNode:
         # Subscriptions
         rospy.Subscriber(ODOMETRY_TOPIC, Odometry, self.odom_callback)
         rospy.Subscriber(POINTCLOUD_TOPIC, PointCloud2, self.pc_callback)
-
+        t1 = PARAMETERS.config.get('scanmatcher').get('threads').get('seconds_period_scanmatching_thread')
+        t2 = PARAMETERS.config.get('scanmatcher').get('threads').get('seconds_period_publish_thread')
+        t3 = PARAMETERS.config.get('scanmatcher').get('threads').get('seconds_period_plot_info_thread')
         # on a different timed thread, process pcds
-        rospy.Timer(rospy.Duration(secs=0, nsecs=int(0.35*1e9)), self.timer_callback_process_scanmatching)
+        rospy.Timer(rospy.Duration(secs=0, nsecs=int(t1*1e9)), self.timer_callback_process_scanmatching)
         # on a different timed thread, publish the found transforms
-        rospy.Timer(rospy.Duration(secs=0, nsecs=int(0.5*1e9)), self.timer_callback_publish_transforms)
+        rospy.Timer(rospy.Duration(secs=0, nsecs=int(t2*1e9)), self.timer_callback_publish_transforms)
         # Set up a timer to periodically update the plot
-        rospy.Timer(rospy.Duration(secs=1), self.timer_callback_plot_info)
+        rospy.Timer(rospy.Duration(secs=0, nsecs=int(t3*1e9)), self.timer_callback_plot_info)
 
         # Publisher
         self.pub = rospy.Publisher(OUTPUT_TOPIC, Odometry, queue_size=10)
         # stores odometry poses as a short buffer with deque
-        self.odombuffer = PosesBuffer(maxlen=10000)
-        self.pcdbuffer = LidarBuffer(maxlen=500)
+        self.odombuffer = PosesBuffer(maxlen=1000)
+        self.pcdbuffer = LidarBuffer(maxlen=30)
         # store the results from the beginning of the experiment
         self.relative_transforms = []
         self.global_transforms = []
@@ -70,9 +73,9 @@ class ScanmatchingNode:
         self.times_odometry = []
         self.times_lidar = []
         self.positions_sm = []
-
+        # the scanmatching object
         self.scanmatcher = ScanMatcher()
-        rospy.loginfo("Scan Matcher with odom/pc running.")
+        rospy.loginfo("ScanMatcher with odom/pc running.")
         # rospy.spin() !!
 
     def run(self):
@@ -102,19 +105,23 @@ class ScanmatchingNode:
         print('Received pointcloud')
         # CAUTION!!! for some reason, the pointclouds and the odometry come at different times
         # IN PARTICULAR, ODOMETRY COMES LATER IN TIME.
-        # wait 0.1 s to allow odometry buffer to fill up
-        rospy.sleep(0.1)
+        # wait 0.1 s to allow odometry buffer to fill up (approximately)
+        delay = PARAMETERS.config.get('scanmatcher').get('initial_transform').get('delay_seconds_lidar_odometry')
+        rospy.sleep(delay)
         # add first pointcloud in this particular case:  only try to get the first pointcloud
         # if we have at least one odometry meeasurement and no initial pcd has been included
         # in order to find a proper initial Tij_0
         if (len(self.pcdbuffer.times) == 0) and (len(self.odombuffer.times) > 0):
+            print(30*'+')
+            print('add_first_pcd')
             self.add_first_pcd(timestamp=timestamp, msg=msg)
             return
+        delta_threshold_s = PARAMETERS.config.get('scanmatcher').get('initial_transform').get('delta_threshold_s')
         odo_ti = self.pcdbuffer[-1].pose
-        odo_tj = self.odombuffer.interpolated_pose_at_time(timestamp=timestamp, delta_threshold_s=0.35)
+        odo_tj = self.odombuffer.interpolated_pose_at_time(timestamp=timestamp, delta_threshold_s=delta_threshold_s)
         if odo_tj is None:
             print('ERROR: !NO VALID ODOMETRY FOUND AT TIMESTAMP: ')
-            print(100*'!')
+            print(1000*'!')
             return
         # Now, only add another pointcloud if the odometry is significantly moved
         d, th = compute_rel_distance(odo_ti, odo_tj)
@@ -123,7 +130,7 @@ class ScanmatchingNode:
         th_poses = PARAMETERS.config.get('scanmatcher').get('th_poses')
         if d > d_poses or th > th_poses:
             print(50*'=')
-            print('Adding new pointcloud at: ', d, ', ', th)
+            # print('Adding new pointcloud at: ', d, ', ', th)
             print('Found lidar nicely separated in odometry')
             print('Appending pointcloud')
             print(50*'=')
@@ -133,7 +140,6 @@ class ScanmatchingNode:
             print(30 * '+')
         return
 
-    # df gps_callback(self, ms)
     def timer_callback_process_scanmatching(self, event):
         """
         Given pcd1, tpcd1 --> find interpolated odom at tpcd1
@@ -144,7 +150,8 @@ class ScanmatchingNode:
         print('timer_callback_process_scanmatching!!')
         print('CURRENT POINTCLOUD BUFFER used percentage is: ', 100*len(self.pcdbuffer.times)/self.pcdbuffer.times.maxlen)
         print(30*'=')
-        # comp
+        voxel_size = PARAMETERS.config.get('scanmatcher').get('voxel_size')
+        # compute the scanmatching on the clouds stored at the pcdbuffer
         k = 0
         for i in range(len(self.pcdbuffer)-1):
             print('Tiempo lidar', self.pcdbuffer.times[i] - self.start_time)
@@ -152,6 +159,8 @@ class ScanmatchingNode:
             odoi = self.pcdbuffer[i].pose.T()
             odoj = self.pcdbuffer[i+1].pose.T()
             Tij0 = odoi.inv()*odoj
+            self.pcdbuffer[i].down_sample(voxel_size=voxel_size)
+            self.pcdbuffer[i + 1].down_sample(voxel_size=voxel_size)
             self.pcdbuffer[i].filter_points()
             self.pcdbuffer[i+1].filter_points()
             self.pcdbuffer[i].estimate_normals()
@@ -160,13 +169,13 @@ class ScanmatchingNode:
             # draw registration result
             self.relative_transforms.append((Tij, self.pcdbuffer.times[i+1]))
             # append to global transforms
-            # Ti = self.global_transforms[-1][0]
-            # Tg = Ti*Tij
+            Ti = self.global_transforms[-1][0]
+            Tg = Ti*Tij
             # adding global transform and pcd
-            # self.global_transforms.append((Tg, self.pcdbuffer.times[i+1]))
-            # self.positions_sm.append(Tg.pos())
+            self.global_transforms.append((Tg, self.pcdbuffer.times[i+1]))
+            self.positions_sm.append(Tg.pos())
             k += 1
-
+        # deque pointclouds and free memory
         for j in range(k):
             print('Deque used pointcloud')
             self.pcdbuffer.popleft()
@@ -180,15 +189,15 @@ class ScanmatchingNode:
         if len(self.global_transforms) == 0:
             return
         # compute global transforms
-        Tg = self.global_transforms[0][0]
-        self.positions_sm = []
-        self.positions_sm.append(Tg.pos())
-        for i in range(len(self.relative_transforms)):
-            Tij = self.relative_transforms[i][0]
-            timestamp = self.relative_transforms[i][1]
-            Tg = Tg*Tij
-            self.global_transforms.append((Tg, timestamp))
-            self.positions_sm.append(Tg.pos())
+        # Tg = self.global_transforms[0][0]
+        # self.positions_sm = []
+        # self.positions_sm.append(Tg.pos())
+        # for i in range(len(self.relative_transforms)):
+        #     Tij = self.relative_transforms[i][0]
+        #     timestamp = self.relative_transforms[i][1]
+        #     Tg = Tg*Tij
+        #     self.global_transforms.append((Tg, timestamp))
+        #     self.positions_sm.append(Tg.pos())
 
         for i in range(len(self.global_transforms)):
             if i > self.last_global_transform_published:
@@ -212,11 +221,12 @@ class ScanmatchingNode:
         # PLOT LOCALIZATION
         print('Odombuffer length: ', len(self.odombuffer.times))
         print('LidarBuffer length: ', len(self.pcdbuffer.times))
-        positions = self.odombuffer.get_positions()
+        odo_positions = self.odombuffer.get_positions()
 
         ax.clear()
-        if len(positions) > 0:
-            ax.scatter(positions[:, 0], positions[:, 1], marker='.', color='red', label='Odometry')
+        if len(odo_positions) > 0:
+            ax.scatter(odo_positions[:, 0], odo_positions[:, 1], marker='.', color='red', label='Odometry')
+
         if len(self.positions_sm) > 0:
             positions_sm = np.array(self.positions_sm)
             ax.scatter(positions_sm[:, 0], positions_sm[:, 1], marker='.', color='blue', label='Scanmatcher')
@@ -256,6 +266,9 @@ class ScanmatchingNode:
         a) Only one has been found--> the closest time is annexed.
         b) Or two times of odometry are found -->
         """
+        # caution, considering twice this time, for the first pointcloud
+        # this is the max. time to issue a warning!
+        delta_threshold_s = PARAMETERS.config.get('scanmatcher').get('initial_transform').get('delta_threshold_s')
         print('Received first pointcloud with odometry')
         if len(self.odombuffer.times) == 0:
             print('NO ODO MEASUREMENTS FOUND. WAIT FOR ODOMETRY')
@@ -265,7 +278,7 @@ class ScanmatchingNode:
         try:
             print('Getting interp odo. Two odometry measurements exist.')
             odo_t0 = self.odombuffer.interpolated_pose_at_time(timestamp=timestamp,
-                                                               delta_threshold_s=0.25)
+                                                               delta_threshold_s=2*delta_threshold_s)
         except:
             pass
         # in any case, try to get the closest pose
@@ -273,7 +286,7 @@ class ScanmatchingNode:
             try:
                 print('Getting closets odo. Only one odometry measurement exists.')
                 odo_t0 = self.odombuffer.closest_pose_at_time(timestamp=timestamp,
-                                                              delta_threshold_s=0.25)
+                                                              delta_threshold_s=2*delta_threshold_s)
             except:
                  pass
         if odo_t0 is None:
@@ -285,154 +298,12 @@ class ScanmatchingNode:
         self.pcdbuffer.append(pcd=pcd, time=timestamp)
         # convert to transform and store
         T0 = odo_t0.T()
+        # first global transform and position
         self.global_transforms = [(T0, timestamp)]
+        self.positions_sm = [T0.pos()]
         # no transforms published so far
         self.last_global_transform_published = -1
         return odo_t0
-
-
-
-    # def pc_callback(self, msg):
-    #     timestamp = msg.header.stamp.to_sec()
-    #     matched_odom = self.find_closest_odom(timestamp)
-    #
-    #     if self.start_time is None:
-    #         self.start_time = timestamp
-    #     if matched_odom is None:
-    #         rospy.logwarn("No odometry available for this scan.")
-    #         return
-    #     if self.posei is None: # Convert odometry to matrix
-    #         posei = Pose()
-    #         posei.from_message(matched_odom)
-    #         self.posei = posei.T()
-    #         rospy.loginfo("Initialized first odometry.")
-    #         return
-    #     print('Current experiment time is: ', timestamp - self.start_time)
-    #     # the current new pose
-    #     posej = Pose()
-    #     posej.from_message(matched_odom)
-    #     self.posej = posej.T()
-    #     Tij = self.posei.inv() * self.posej
-    #     # toggle poses
-    #     self.posei = posej
-    #
-    #     # filter by distance and angle
-    #     d = np.linalg.norm(Tij.pos())
-    #
-    #     if self.pcd_i is None:
-    #         self.pcd_i = LiDARScan()
-    #         self.pcd_i.load_pointcloud_from_msg(msg)
-    #         rospy.loginfo("Initialized first scan.")
-    #         return
-    #
-    #
-    #
-    #     cloud = np.array([p[:3] for p in pc2.read_points(msg, skip_nans=True)])
-    #     source_pcd = o3d.geometry.PointCloud()
-    #     source_pcd.points = o3d.utility.Vector3dVector(cloud)
-    #
-    #
-    #
-    #     delta_odom = np.linalg.inv(self.prev_odom_matrix) @ current_odom_matrix
-    #
-    #     reg = o3d.pipelines.registration.registration_icp(
-    #         source_pcd, self.prev_pcd, 1.0, delta_odom,
-    #         o3d.pipelines.registration.TransformationEstimationPointToPoint()
-    #     )
-    #
-    #     T = reg.transformation
-    #     rospy.loginfo(f"ICP fitness: {reg.fitness:.3f}")
-    #
-    #     self.publish_pose(T, msg.header.stamp, msg.header.frame_id)
-    #
-    #     self.prev_pcd = source_pcd
-    #     self.prev_odom_matrix = current_odom_matrix
-    #
-    # def synced_callback(self, pc_msg, odom_msg):
-    #     timestamp = pc_msg.header.stamp.to_sec()
-    #     if self.posei is None: # Convert odometry to matrix
-    #         posei = Pose()
-    #         posei.from_message(odom_msg.pose.pose)
-    #         self.posei = posei.T()
-    #         self.start_time = timestamp
-    #         return
-    #     print('Current experiment time is: ', timestamp - self.start_time)
-    #     posej = Pose()
-    #     posej.from_message(odom_msg.pose.pose)
-    #     self.posej = posej.T()
-    #     Tij = self.posei.inv()*self.posej
-    #     # check for relative distance traveled
-    #
-    #
-    #     # Convert PointCloud2 to Open3D
-    #     cloud = np.array([p[:3] for p in pc2.read_points(pc_msg, skip_nans=True)])
-    #     source_pcd = o3d.geometry.PointCloud()
-    #     source_pcd.points = o3d.utility.Vector3dVector(cloud)
-    #
-    #     if self.prev_pcd is None or self.prev_odom_matrix is None:
-    #         self.prev_pcd = source_pcd
-    #         self.prev_odom_matrix = current_odom_matrix
-    #         rospy.loginfo("Stored first scan & odometry.")
-    #         return
-    #
-    #     # Relative odometry as initial guess
-    #     delta_odom = np.linalg.inv(self.prev_odom_matrix) @ current_odom_matrix
-    #
-    #     reg = o3d.pipelines.registration.registration_icp(
-    #         source_pcd, self.prev_pcd, 1.0, delta_odom,
-    #         o3d.pipelines.registration.TransformationEstimationPointToPoint()
-    #     )
-    #
-    #     T = reg.transformation
-    #     rospy.loginfo(f"ICP fitness: {reg.fitness:.3f}")
-    #
-    #     self.publish_pose(T, pc_msg.header.stamp, pc_msg.header.frame_id)
-    #
-    #     self.prev_pcd = source_pcd
-    #     self.prev_odom_matrix = current_odom_matrix
-    #
-    #
-    # def odom_callback(self, msg):
-    #     print('Received odo measurement')
-    #     timestamp = msg.header.stamp.to_sec()
-    #     print('Current experiment time is: ', timestamp-self.start_time)
-    #     if self.posei is None:
-    #         posei = Pose()
-    #         posei.from_message(msg.pose.pose)
-    #         self.posei = posei
-    #         self.start_time = timestamp
-    #         return
-    #     posej = Pose()
-    #     posej.from_message(msg.pose.pose)
-    #     self.posej = posej
-    #     Ti = self.posei.T()
-    #     Tj = self.posej.T()
-    #     Tij = Ti.inv()*Tj
-    #
-    #     self.publish_pose(last_sol)
-
-    # def gps_callback(self, msg):
-    #     # Convert lat/lon to dummy XYZ — replace with ENU or UTM in real use
-    #     print(30*'$')
-    #     print('Received GPS reading')
-    #     print(msg.status)
-    #     print('Sigma is: ',
-    #
-    #           np.sqrt(msg.position_covariance[0]))
-    #     print(30 * '$')
-    #     self.last_gps = convert_and_filter_gps(msg)
-    #     if self.last_gps is None:
-    #         print(30 * '?')
-    #         print("Received non-valid GPS reading!")
-    #         print(30 * '?')
-    #         return
-    #     print(30*'*')
-    #     print("Received valid GPS reading!!")
-    #     print(30 * '*')
-
-
-
-
 
 
 if __name__ == "__main__":

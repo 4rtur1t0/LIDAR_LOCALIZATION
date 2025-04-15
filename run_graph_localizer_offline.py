@@ -8,15 +8,15 @@ import numpy as np
 from artelib.homogeneousmatrix import HomogeneousMatrix
 from artelib.vector import Vector
 from artelib.euler import Euler
-from graphslam.loopclosing import LoopClosing
-from graphslam.helper_functions import process_odometry, process_gps, process_aruco_landmarks, \
+from graphSLAM.loopclosing import LoopClosing
+from graphSLAM.helper_functions import process_odometry, process_gps, process_aruco_landmarks, \
     process_triplets_scanmatching, plot_sensors, process_loop_closing_lidar
 from lidarscanarray.lidarscanarray import LiDARScanArray
 from observations.gpsarray import GPSArray
 from observations.posesarray import PosesArray, ArucoPosesArray
 import getopt
 import sys
-from graphslam.graphSLAM import GraphSLAM
+from graphSLAM.graphSLAM import GraphSLAM
 import matplotlib.pyplot as plt
 from map.map import Map
 from session.session import Session

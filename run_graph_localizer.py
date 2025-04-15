@@ -7,15 +7,15 @@ We are integrating odometry, scanmatching odometry and (if present) GPS.
 import rospy
 import numpy as np
 from nav_msgs.msg import Odometry
+from observations.posesbuffer import PosesBuffer, Pose
 from sensor_msgs.msg import NavSatFix
-from geometry_msgs.msg import PoseWithCovarianceStamped
+from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from graphslam.graphSLAM import GraphSLAM
+from graphSLAM.graphSLAM import GraphSLAM
 from artelib.homogeneousmatrix import HomogeneousMatrix
 from artelib.vector import Vector
 from artelib.euler import Euler
-from observations.posesarray import Pose
 from config import PARAMETERS
 from tools.gpsconversions import gps2utm
 
@@ -46,7 +46,7 @@ def convert_and_filter_gps(msg):
     return df_utm
 
 
-class LocalizationNode:
+class LocalizationROSNode:
     def __init__(self):
         print('Initializing localization node!')
         rospy.init_node('localization_node')
@@ -54,11 +54,17 @@ class LocalizationNode:
         print('WAITING FOR MESSAGES!')
         # Subscriptions
         rospy.Subscriber('/husky_velocity_controller/odom', Odometry, self.odom_callback)
+        rospy.Subscriber('/odometry_lidar_scanmatching', Odometry, self.odom_sm_callback)
         rospy.Subscriber('/gnss/fix', NavSatFix, self.gps_callback)
+        # the ARUCO observations
+        rospy.Subscriber('/aruco_observation', PoseStamped, self.aruco_observation_callback)
         # Set up a timer to periodically update the plot
-        rospy.Timer(rospy.Duration(2), self.timer_callback)
+        rospy.Timer(rospy.Duration(2), self.plot_timer_callback)
+        # Set up a timer to periodically update the graph
+        rospy.Timer(rospy.Duration(1), self.update_graph_timer_callback)
         # Publisher
         self.pub = rospy.Publisher('/localized_pose', Odometry, queue_size=10)
+        # transforms
         T0 = HomogeneousMatrix()
         # T LiDAR-GPS
         Tlidar_gps = HomogeneousMatrix(Vector([0.36, 0, -0.4]), Euler([0, 0, 0]))
@@ -68,78 +74,189 @@ class LocalizationNode:
         self.graphslam = GraphSLAM(T0=T0, Tlidar_gps=Tlidar_gps, Tlidar_cam=Tlidar_cam)
         self.graphslam.init_graph()
 
+        # store odometry in deque fashion
+        self.odom_buffer = PosesBuffer(maxlen=1000)
+        # store scanmatcher odometry in deque fashion
+        self.odom_sm_buffer = PosesBuffer(maxlen=1000)
+        #
+        # self.gps_buffer = GPSBuffer(maxlen=1000)
+
         self.skip_optimization = 200
-        # Odom
-        self.posei = None
-        self.posej = None
         self.current_key = 0
+        self.graphslam_times = []
 
         # gps
-        self.last_gps = None
-        self.utm_valid_positions = []
+        # self.last_gps = None
+        # self.utm_valid_positions = []
         # time
-        self.start_time = 0
+        self.start_time = None
+
 
     def odom_callback(self, msg):
-        print('Received odo measurement')
-        print('Current key is: ', self.current_key)
+        """
+            Get last odometry reading and append to buffer.
+        """
         timestamp = msg.header.stamp.to_sec()
-        print('Current experiment time is: ', timestamp-self.start_time)
-        if self.posei is None:
-            posei = Pose()
-            posei.from_message(msg.pose.pose)
-            self.posei = posei
+        if self.start_time is None:
             self.start_time = timestamp
-            return
-        posej = Pose()
-        posej.from_message(msg.pose.pose)
-        self.posej = posej
-        Ti = self.posei.T()
-        Tj = self.posej.T()
-        Tij = Ti.inv()*Tj
-        self.graphslam.add_initial_estimate(Tij, self.current_key + 1)
-        self.graphslam.add_edge(Tij, self.current_key, self.current_key + 1, 'ODO')
-        self.current_key += 1
-        self.posei = self.posej
+        pose = Pose()
+        pose.from_message(msg.pose.pose)
+        self.odom_buffer.append(pose, timestamp)
 
-        if self.last_gps is not None:
-            print('ADDING GPS FACTOR')
-            print(30*'=')
-            self.graphslam.add_GPSfactor(utmx=self.last_gps['x'],
-                                         utmy=self.last_gps['y'],
-                                         utmaltitude=self.last_gps['altitude'],
-                                         gpsnoise=None, i=self.current_key)
-            self.utm_valid_positions.append([self.last_gps['x'], self.last_gps['y']])
-            self.last_gps = None
+    def odom_sm_callback(self, msg):
+        """
+            Get last odometry reading and append to buffer.
+        """
+        timestamp = msg.header.stamp.to_sec()
+        if self.start_time is None:
+            self.start_time = timestamp
+            self.graphslam_times = [timestamp]
+        pose = Pose()
+        pose.from_message(msg.pose.pose)
+        self.odom_sm_buffer.append(pose, timestamp)
 
-        if self.current_key % self.skip_optimization == 0:
-            print('GRAPHSLAM OPTIMIZE')
-            print(50 * '*')
-            # reinit graph!
-            self.graphslam.optimize()
-
-        # get last solution and publish
-        last_sol = self.graphslam.get_solution_last(self.current_key)
-        self.publish_pose(last_sol)
+    def aruco_observation_callback(self, msg):
+        """
+            Get last odom reading and append to buffer.
+        """
+        timestamp = msg.header.stamp.to_sec()
+        if self.start_time is None:
+            self.start_time = timestamp
+        # pose = Pose()
+        # pose.from_message(msg.pose.pose)
+        # self.aruco_observation_buffer.append(pose, timestamp)
 
     def gps_callback(self, msg):
-        # Convert lat/lon to dummy XYZ — replace with ENU or UTM in real use
-        print(30*'$')
-        print('Received GPS reading')
-        print(msg.status)
-        print('Sigma is: ',
+        """
+            Get last odometry reading and append to buffer.
+        """
+        timestamp = msg.header.stamp.to_sec()
+        if self.start_time is None:
+            self.start_time = timestamp
+        # gpspose = GPSPose()
+        # gpspose.from_message(msg.pose.pose)
+        # self.gps_buffer.append(gpspose, timestamp)
 
-              np.sqrt(msg.position_covariance[0]))
-        print(30 * '$')
-        self.last_gps = convert_and_filter_gps(msg)
-        if self.last_gps is None:
-            print(30 * '?')
-            print("Received non-valid GPS reading!")
-            print(30 * '?')
-            return
-        print(30*'*')
-        print("Received valid GPS reading!!")
-        print(30 * '*')
+    def update_graph_timer_callback(self, event):
+        print('UPDATING with last SM observations')
+        k = 0
+        #add sm observations
+        for i in range(len(self.odom_sm_buffer) - 1):
+            print('Tiempo scanmatcher', self.odom_sm_buffer.times[i] - self.start_time)
+            Ti = self.odom_sm_buffer[i].T()
+            Tj = self.odom_sm_buffer[i + 1].T()
+            Tij = Ti.inv()*Tj
+            self.graphslam.add_initial_estimate(Tij, self.current_key + 1)
+            self.graphslam.add_edge(Tij, self.current_key, self.current_key + 1, 'SMODO')
+            self.current_key += 1
+            self.graphslam_times.append(self.odom_sm_buffer.times[i+1])
+            k += 1
+        # removed used odom_sm observations
+        for j in range(k):
+            self.odom_sm_buffer.popleft()
+
+    # def odom_callback(self, msg):
+    #     print('Received odo measurement')
+    #     print('Current key is: ', self.current_key)
+    #     timestamp = msg.header.stamp.to_sec()
+    #     print('Current experiment time is: ', timestamp-self.start_time)
+    #     if self.posei is None:
+    #         posei = Pose()
+    #         posei.from_message(msg.pose.pose)
+    #         self.posei = posei
+    #         self.start_time = timestamp
+    #         return
+    #     posej = Pose()
+    #     posej.from_message(msg.pose.pose)
+    #     self.posej = posej
+    #     Ti = self.posei.T()
+    #     Tj = self.posej.T()
+    #     Tij = Ti.inv()*Tj
+    #     self.graphslam.add_initial_estimate(Tij, self.current_key + 1)
+    #     self.graphslam.add_edge(Tij, self.current_key, self.current_key + 1, 'ODO')
+    #     self.current_key += 1
+    #     self.posei = self.posej
+    #
+    #     if self.last_gps is not None:
+    #         print('ADDING GPS FACTOR')
+    #         print(30*'=')
+    #         self.graphslam.add_GPSfactor(utmx=self.last_gps['x'],
+    #                                      utmy=self.last_gps['y'],
+    #                                      utmaltitude=self.last_gps['altitude'],
+    #                                      gpsnoise=None, i=self.current_key)
+    #         self.utm_valid_positions.append([self.last_gps['x'], self.last_gps['y']])
+    #         self.last_gps = None
+    #
+    #     if self.current_key % self.skip_optimization == 0:
+    #         print('GRAPHSLAM OPTIMIZE')
+    #         print(50 * '*')
+    #         # reinit graph!
+    #         self.graphslam.optimize()
+    #
+    #     # get last solution and publish
+    #     last_sol = self.graphslam.get_solution_last(self.current_key)
+    #     self.publish_pose(last_sol)
+    #
+    # def odometry_sm_callback(self, msg):
+    #     print('Received odo measurement')
+    #     print('Current key is: ', self.current_key)
+    #     timestamp = msg.header.stamp.to_sec()
+    #     print('Current experiment time is: ', timestamp-self.start_time)
+    #     if self.posei is None:
+    #         posei = Pose()
+    #         posei.from_message(msg.pose.pose)
+    #         self.posei = posei
+    #         self.start_time = timestamp
+    #         return
+    #     posej = Pose()
+    #     posej.from_message(msg.pose.pose)
+    #     self.posej = posej
+    #     Ti = self.posei.T()
+    #     Tj = self.posej.T()
+    #     Tij = Ti.inv()*Tj
+    #     self.graphslam.add_initial_estimate(Tij, self.current_key + 1)
+    #     self.graphslam.add_edge(Tij, self.current_key, self.current_key + 1, 'ODO')
+    #     self.current_key += 1
+    #     self.posei = self.posej
+    #
+    #     if self.last_gps is not None:
+    #         print('ADDING GPS FACTOR')
+    #         print(30*'=')
+    #         self.graphslam.add_GPSfactor(utmx=self.last_gps['x'],
+    #                                      utmy=self.last_gps['y'],
+    #                                      utmaltitude=self.last_gps['altitude'],
+    #                                      gpsnoise=None, i=self.current_key)
+    #         self.utm_valid_positions.append([self.last_gps['x'], self.last_gps['y']])
+    #         self.last_gps = None
+    #
+    #     if self.current_key % self.skip_optimization == 0:
+    #         print('GRAPHSLAM OPTIMIZE')
+    #         print(50 * '*')
+    #         # reinit graph!
+    #         self.graphslam.optimize()
+    #
+    #     # get last solution and publish
+    #     last_sol = self.graphslam.get_solution_last(self.current_key)
+    #     self.publish_pose(last_sol)
+    #
+    # def gps_callback(self, msg):
+    #     # Convert lat/lon to dummy XYZ — replace with ENU or UTM in real use
+    #     print(30*'$')
+    #     print('Received GPS reading')
+    #     print(msg.status)
+    #     print('Sigma is: ',
+    #
+    #           np.sqrt(msg.position_covariance[0]))
+    #     print(30 * '$')
+    #     self.last_gps = convert_and_filter_gps(msg)
+    #     if self.last_gps is None:
+    #         print(30 * '?')
+    #         print("Received non-valid GPS reading!")
+    #         print(30 * '?')
+    #         return
+    #     print(30*'*')
+    #     print("Received valid GPS reading!!")
+    #     print(30 * '*')
 
     def publish_pose(self, T):
         if T is None:
@@ -160,16 +277,19 @@ class LocalizationNode:
         msg.pose.pose.orientation.w = orientation.qw
         self.pub.publish(msg)
 
-    def timer_callback(self, event):
+    def plot_timer_callback(self, event):
+        print('Plotting info')
         positions = self.graphslam.get_solution_positions()
         ax.clear()
         if len(positions) > 0:
             ax.scatter(positions[:, 0], positions[:, 1], marker='.', color='blue')
-        if len(self.utm_valid_positions) > 0:
-            utm_valid_positions = np.array(self.utm_valid_positions)
-            ax.scatter(utm_valid_positions[:, 0],
-                       utm_valid_positions[:, 1], marker='.', color='red')
+        # if len(self.utm_valid_positions) > 0:
+        #     utm_valid_positions = np.array(self.utm_valid_positions)
+        #     ax.scatter(utm_valid_positions[:, 0],
+        #                utm_valid_positions[:, 1], marker='.', color='red')
         canvas.print_figure('plot.png', bbox_inches='tight')
+
+
 
     def run(self):
         rospy.spin()
@@ -177,7 +297,7 @@ class LocalizationNode:
 
 if __name__ == "__main__":
     filename = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17.bag'
-    node = LocalizationNode()
+    node = LocalizationROSNode()
     node.run()
 
 

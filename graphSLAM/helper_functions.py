@@ -1,7 +1,7 @@
 import numpy as np
 from artelib.homogeneousmatrix import HomogeneousMatrix
 from config import PARAMETERS
-from graphslam.loopclosing import LoopClosing
+from graphSLAM.loopclosing import LoopClosing
 from scanmatcher.scanmatcher import ScanMatcher
 from gtsam.symbol_shorthand import X, L
 import matplotlib.pyplot as plt

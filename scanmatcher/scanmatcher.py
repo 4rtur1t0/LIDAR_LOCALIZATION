@@ -52,11 +52,9 @@ class ScanMatcher():
         reg_p2p = o3d.pipelines.registration.registration_icp(
                             other.pointcloud, one.pointcloud, icp_threshold, initial_transform,
                             o3d.pipelines.registration.TransformationEstimationPointToPlane())
-        # else:
-        #     print('UNKNOWN OPTION. Should be pointpoint or pointplane')
         print('Registration result: ', reg_p2p)
-        print("Transformation is:")
-        print(reg_p2p.transformation)
+        # print("Transformation is:")
+        # print(reg_p2p.transformation)
         if show:
             other.draw_registration_result(one, reg_p2p.transformation)
         T = HomogeneousMatrix(reg_p2p.transformation)

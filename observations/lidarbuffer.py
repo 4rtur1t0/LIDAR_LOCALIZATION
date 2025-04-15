@@ -3,6 +3,9 @@ import bisect
 from collections import deque
 import open3d as o3d
 import copy
+
+import gc
+
 from config import PARAMETERS
 import sensor_msgs.point_cloud2 as pc2
 import numpy as np
@@ -16,7 +19,7 @@ class LidarBuffer:
         self.times = deque(maxlen=maxlen)
         self.pointclouds = deque(maxlen=maxlen)
         # stores the pcds that have been processed
-        self.processed = deque(maxlen=maxlen)
+        # self.processed = deque(maxlen=maxlen)
         self.show_registration_result = False
 
     def from_msg(self):
@@ -125,7 +128,7 @@ class LidarScan():
         o3d.io.write_point_cloud(filename, self.pointcloud)
 
     def filter_points(self):
-        self.down_sample()
+        # self.down_sample()
         self.filter_radius()
         self.filter_height()
 
@@ -205,17 +208,15 @@ class LidarScan():
         o3d.visualization.draw_geometries([source_temp, target_temp])
 
     def unload_pointcloud(self):
+        """
+        Remove and collect memory garbage.
+        Delete the poincloud actively.
+        """
         print('Removing pointclouds from memory (filtered, planes, fpfh): ')
         del self.pointcloud
-        # del self.pointcloud_filtered
-        # del self.pointcloud_fpfh
-        # del self.pointcloud_ground_plane
-        # del self.pointcloud_non_ground_plane
         self.pointcloud = None
-        # self.pointcloud_filtered = None
-        # self.pointcloud_ground_plane = None
-        # self.pointcloud_non_ground_plane = None
-        # self.pointcloud_fpfh = None
+        gc.collect()
+
 
 
 
