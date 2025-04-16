@@ -6,7 +6,9 @@ We are integrating odometry, scanmatching odometry and (if present) GPS.
 """
 import rospy
 import numpy as np
+from graphSLAM.helper_functions import update_sm_observations, update_odo_observations
 from nav_msgs.msg import Odometry
+from observations.gpsbuffer import GPSBuffer, GPSPosition
 from observations.posesbuffer import PosesBuffer, Pose
 from sensor_msgs.msg import NavSatFix
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
@@ -61,7 +63,7 @@ class LocalizationROSNode:
         # Set up a timer to periodically update the plot
         rospy.Timer(rospy.Duration(2), self.plot_timer_callback)
         # Set up a timer to periodically update the graph
-        rospy.Timer(rospy.Duration(1), self.update_graph_timer_callback)
+        rospy.Timer(rospy.Duration(2), self.update_graph_timer_callback)
         # Publisher
         self.pub = rospy.Publisher('/localized_pose', Odometry, queue_size=10)
         # transforms
@@ -75,21 +77,24 @@ class LocalizationROSNode:
         self.graphslam.init_graph()
 
         # store odometry in deque fashion
-        self.odom_buffer = PosesBuffer(maxlen=1000)
+        self.odom_buffer = PosesBuffer(maxlen=5000)
         # store scanmatcher odometry in deque fashion
-        self.odom_sm_buffer = PosesBuffer(maxlen=1000)
-        #
-        # self.gps_buffer = GPSBuffer(maxlen=1000)
+        self.odom_sm_buffer = PosesBuffer(maxlen=5000)
+        # store gps readings (in utm)
+        self.gps_buffer = GPSBuffer(maxlen=1000)
 
         self.skip_optimization = 200
         self.current_key = 0
+        self.optimization_index = 1
+        # gparhslam times
         self.graphslam_times = []
+        self.start_time = None
 
         # gps
         # self.last_gps = None
         # self.utm_valid_positions = []
         # time
-        self.start_time = None
+
 
 
     def odom_callback(self, msg):
@@ -105,12 +110,12 @@ class LocalizationROSNode:
 
     def odom_sm_callback(self, msg):
         """
-            Get last odometry reading and append to buffer.
+            Get last scanmatching odometry reading and append to buffer.
         """
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
             self.start_time = timestamp
-            self.graphslam_times = [timestamp]
+            self.graphslam_times = np.array([timestamp])
         pose = Pose()
         pose.from_message(msg.pose.pose)
         self.odom_sm_buffer.append(pose, timestamp)
@@ -128,32 +133,49 @@ class LocalizationROSNode:
 
     def gps_callback(self, msg):
         """
-            Get last odometry reading and append to buffer.
+            Get last GPS reading and append to buffer.
         """
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
             self.start_time = timestamp
-        # gpspose = GPSPose()
+        gpsposition = GPSPosition()
+        gpsposition = gpsposition.from_message(msg)
+        # filter gps readings
+        if gpsposition.status < PARAMETERS.config.get('gps').get('min_status'):
+            return
+        # filter gps readings
+        if np.sqrt(gpsposition.position_covariance[0]) > PARAMETERS.config.get('gps').get('max_sigma_xy'):
+            return
+        # convert to UTM
+        utm_ref = PARAMETERS.config.get('gps').get('utm_reference')
+        utmposition = gpsposition.to_utm(utm_ref)
+        # filter
         # gpspose.from_message(msg.pose.pose)
-        # self.gps_buffer.append(gpspose, timestamp)
+        self.gps_buffer.append(utmposition, timestamp)
 
     def update_graph_timer_callback(self, event):
-        print('UPDATING with last SM observations')
-        k = 0
-        #add sm observations
-        for i in range(len(self.odom_sm_buffer) - 1):
-            print('Tiempo scanmatcher', self.odom_sm_buffer.times[i] - self.start_time)
-            Ti = self.odom_sm_buffer[i].T()
-            Tj = self.odom_sm_buffer[i + 1].T()
-            Tij = Ti.inv()*Tj
-            self.graphslam.add_initial_estimate(Tij, self.current_key + 1)
-            self.graphslam.add_edge(Tij, self.current_key, self.current_key + 1, 'SMODO')
-            self.current_key += 1
-            self.graphslam_times.append(self.odom_sm_buffer.times[i+1])
-            k += 1
-        # removed used odom_sm observations
-        for j in range(k):
-            self.odom_sm_buffer.popleft()
+        """
+        Called at a fixed timestamp to integrate new observations in the graph
+        """
+        update_sm_observations(self)
+        update_odo_observations(self)
+        update_gps_observations(self)
+
+        self.optimization_index += 1
+        if self.optimization_index % self.skip_optimization:
+            print(300*'+')
+            print('Optimize Graph!!')
+            print(300 * '+')
+            self.graphslam.optimize()
+
+
+
+
+
+
+
+        # integrate GPS measurements (interpolated)
+
 
     # def odom_callback(self, msg):
     #     print('Received odo measurement')

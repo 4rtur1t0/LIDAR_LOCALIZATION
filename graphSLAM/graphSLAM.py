@@ -19,13 +19,12 @@ odo_xyz_sigma = 0.1
 # Declare the 3D rotational standard deviations of the odometry factor's Gaussian model, in degrees.
 odo_rpy_sigma = 10
 # Declare the 3D translational standard deviations of the scanmatcher factor's Gaussian model, in meters.
-icp_xyz_sigma = 0.05
+icp_xyz_sigma = 0.01
 # Declare the 3D rotational standard deviations of the odometry factor's Gaussian model, in degrees.
-icp_rpy_sigma = 3
+icp_rpy_sigma = 2
 # GPS noise: in UTM, x, y, height. Standar errors. GPS noise can be included from the GPS readings.
-gps_xy_sigma = 2.5
-gps_altitude_sigma = 3.0
-
+# gps_xy_sigma = 2.5
+# gps_altitude_sigma = 3.0
 gps_xy_sigma = 8
 gps_altitude_sigma = 100.0
 

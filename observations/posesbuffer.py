@@ -1,7 +1,6 @@
 import numpy as np
 from artelib.homogeneousmatrix import HomogeneousMatrix
 from artelib.tools import slerp
-# from eurocreader.eurocreader import EurocReader
 from artelib.vector import Vector
 from artelib.quaternion import Quaternion
 import bisect
@@ -20,6 +19,7 @@ class PosesBuffer():
         self.times = deque(maxlen=maxlen)
         self.poses = deque(maxlen=maxlen)
         self.warning_max_time_diff_s = 1
+        self.last_processed_time = None
 
     def __len__(self):
         return len(self.times)
@@ -36,6 +36,11 @@ class PosesBuffer():
 
     def get_time(self, index):
         return self.times[index]
+
+    def get_last_processed_time(self):
+        if self.last_processed_time is None:
+            return self.times[0]
+        return self.last_processed_time
 
     def get_times(self):
         return self.times
