@@ -11,13 +11,13 @@ from gtsam.symbol_shorthand import X, L
 from eurocreader.eurocreader import EurocReader
 
 # Declare the 3D translational standard deviations of the prior factor's Gaussian model, in meters.
-prior_xyz_sigma = 10000.0000000
+prior_xyz_sigma = 1000.0000000
 # Declare the 3D rotational standard deviations of the prior factor's Gaussian model, in degrees.
-prior_rpy_sigma = 1000.0000000
+prior_rpy_sigma = 100.0000000
 # Declare the 3D translational standard deviations of the odometry factor's Gaussian model, in meters.
-odo_xyz_sigma = 0.1
+odo_xyz_sigma = 0.05
 # Declare the 3D rotational standard deviations of the odometry factor's Gaussian model, in degrees.
-odo_rpy_sigma = 10
+odo_rpy_sigma = 5
 # Declare the 3D translational standard deviations of the scanmatcher factor's Gaussian model, in meters.
 icp_xyz_sigma = 0.01
 # Declare the 3D rotational standard deviations of the odometry factor's Gaussian model, in degrees.

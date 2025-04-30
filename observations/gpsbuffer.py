@@ -1,8 +1,5 @@
 from collections import deque
-
 import numpy as np
-import yaml
-from eurocreader.eurocreader import EurocReader
 import bisect
 import matplotlib.pyplot as plt
 from pyproj import Proj
@@ -95,7 +92,7 @@ class GPSBuffer():
             return None
         return self.positions[idx]
 
-    def interpolated_pose_at_time(self, timestamp, delta_threshold_s=1):
+    def interpolated_gps_at_time(self, timestamp, delta_threshold_s=1):
         """
         Find a Pose for timestamp, by looking for the two closest times t1 and t2 and
         computing an interpolation
@@ -109,8 +106,12 @@ class GPSBuffer():
         if t1 <= timestamp <= t2:
             gps1 = self.positions[idx1]
             gps2 = self.positions[idx2]
-            odointerp = self.interpolate_position(gps1, t1, gps2, t2, timestamp)
-            return odointerp
+            p_t = self.interpolate_position(gps1, t1, gps2, t2, timestamp)
+            utminterp = UTMPosition(x=p_t[0], y=p_t[1], altitude=p_t[2],
+                                    covariance=gps1.position_covariance,
+                                    status=gps1.status,
+                                    config_ref=self.config_ref)
+            return utminterp
         return None
 
     def find_closest_times_around_t_bisect(self, t):
@@ -134,41 +135,15 @@ class GPSBuffer():
         """
         # Compute interpolation factor
         alpha = (t - t1) / (t2 - t1)
-
-        # Linear interpolation of position
-        p_t = (1 - alpha) * gps1.position.pos() + alpha * gps2.position.pos()
-
-        # poset = {'x': p_t[0],
-        #          'y': p_t[1],
-        #          'z': p_t[2]}
-        # interppose = UTMPosition()
-        interpposition = UTMPosition(x=p_t[0], y=p_t[1], altitude=p_t[2],
-                                     covariance=self.position_covariance,
-                                     status=self.status)
-        return interpposition
+        # Linear interpolation of utm position
+        p_t = (1 - alpha) * gps1.pos() + alpha * gps2.pos()
+        return p_t
 
     def popleft(self):
         self.positions.popleft()
         self.times.popleft()
 
-    #
-    # def filter_measurements(self, max_sigma_xy=8, min_status=0):
-    #     max_sigma_xy=PARAMETERS.config.get('gps').get('max_sigma_xy')
-    #     min_status = PARAMETERS.config.get('gps').get('min_status')
-    #     filtered_values = []
-    #     filtered_times = []
-    #     for i in range(len(self.times)):
-    #         gps_reading = self.values[i]
-    #         # typically remove status -1 measurements
-    #         if gps_reading.status < min_status:
-    #             continue
-    #         sigma_xy = np.sum(np.sqrt(gps_reading.covariance[0:2]))
-    #         if sigma_xy > max_sigma_xy:
-    #             continue
-    #         filtered_values.append(self.values[i])
-    #         filtered_times.append(self.times[i])
-    #     self.values = np.array(filtered_values)
-    #     self.times = np.array(filtered_times)
+
 
     def plot_xy(self):
         x = []
@@ -218,86 +193,6 @@ class GPSBuffer():
 
 
 
-    #
-    # def get_at_exact_time(self, timestamp):
-    #     """
-    #     Get the observation found at a exact, particular, time.
-    #     """
-    #     index = bisect.bisect_left(self.times, timestamp)
-    #     if index < len(self.times) and self.times[index] == timestamp:
-    #         print(f"Element {timestamp} found at index {index}")
-    #         return self.values[index]
-    #     else:
-    #         return None
-    #
-    # def get_utm_positions(self):
-    #     utmpositions = []
-    #     for gpsvalue in self.values:
-    #         utmpositions.append(gpsvalue.to_utm(config_ref=self.config_ref))
-    #     return utmpositions
-    #
-    # def get_closest_at_time(self, timestamp):
-    #     d = np.abs(self.times - timestamp)
-    #     index = np.argmin(d)
-    #     time_diff_s = d[index] / 1e9
-    #     output_time = self.times[index]
-    #     output_pose = self.values[index]
-    #     if time_diff_s > self.warning_max_time_diff_s:
-    #         print('CAUTION!!! Found time difference (s): ', time_diff_s)
-    #         print('CAUTION!!! Should we associate data??')
-    #     return output_pose, output_time
-    #
-    # def interpolated_utm_at_time(self, timestamp, delta_threshold_s=1):
-    #     """
-    #     Find a Pose for timestamp, looking for the two closest times
-    #     Every GPS reading is converted to UTM considering the GPS reference.
-    #     """
-    #     idx1, t1, idx2, t2 = self.find_closest_times_around_t_bisect(timestamp)
-    #     print('Time distances: ', (timestamp-t1)/1e9, (t2-timestamp)/1e9)
-    #     # ensure t1 < t < t2 and the time distances are below a threshold s
-    #     if ((timestamp - t1)/1e9 > delta_threshold_s) or ((t2-timestamp)/1e9 > delta_threshold_s):
-    #         print('Discard GPS!')
-    #         return None
-    #     if t1 <= timestamp <= t2:
-    #         gps1 = self.values[idx1]
-    #         gps2 = self.values[idx2]
-    #         utm1 = gps1.to_utm(config_ref=self.config_ref)
-    #         utm2 = gps2.to_utm(config_ref=self.config_ref)
-    #         odointerp = self.interpolate_utm(utm1, t1, utm2, t2, timestamp)
-    #         return odointerp
-    #     return None
-    #
-    # def find_closest_times_around_t_bisect(self, t):
-    #     # Find the index where t would be inserted in sorted_times
-    #     idx = bisect.bisect_left(self.times, t)
-    #
-    #     # Determine the two closest times
-    #     if idx == 0:
-    #         # t is before the first element
-    #         return 0, self.times[0], 1, self.times[1]
-    #     elif idx == len(self.times):
-    #         # t is after the last element
-    #         return -2, self.times[-2], -1, self.times[-1]
-    #     else:
-    #         # Take the closest two times around t
-    #         return idx-1, self.times[idx - 1], idx,  self.times[idx]
-    #
-    # def interpolate_utm(self, utm1, t1, utm2, t2, t):
-    #     # Compute interpolation factor
-    #     alpha = (t - t1) / (t2 - t1)
-    #     # Linear interpolation of position and altitude
-    #     p_t = (1 - alpha) * utm1.pos() + alpha * utm2.pos()
-    #     status = min(utm1.status, utm2.status)
-    #     # covariance as the maximum of the two
-    #     interpcovariance = np.maximum(utm1.covariance, utm2.covariance)
-    #     interputm = UTMPosition(x=p_t[0], y=p_t[1], altitude=p_t[2],
-    #                             covariance=interpcovariance,
-    #                             status=status)
-    #     return interputm
-
-
-
-
 class GPSPosition():
     def __init__(self, latitude=None, longitude=None, altitude=None, covariance=None, status=0, time=None):
         """
@@ -331,7 +226,7 @@ class UTMPosition():
         self.x = x
         self.y = y
         self.altitude = altitude
-        self.covariance = covariance
+        self.position_covariance = covariance
         self.status = status
         self.config_ref = config_ref
 

@@ -1,15 +1,10 @@
 import numpy as np
-# from artelib.homogeneousmatrix import HomogeneousMatrix
-# from config import PARAMETERS
-# from graphSLAM.loopclosing import LoopClosing
-# from scanmatcher.scanmatcher import ScanMatcher
-# from gtsam.symbol_shorthand import X, L
-# import matplotlib.pyplot as plt
+from config import PARAMETERS
 
 
 def update_sm_observations(nodeloc):
     """
-    SM observations create a new state
+    SM observations create a new state and a relation between two states.
     """
     print('UPDATING with last SM observations')
     k = 0
@@ -90,19 +85,67 @@ def update_gps_observations(nodeloc):
     # look for the times in the graph that can be updated with new information
     indices = np.where(nodeloc.graphslam_times >= timi_gps_ini)[0]
     first_index = indices[0] if indices.size > 0 else None
-    # time_graph_ini = self.graphslam_times[first_index]
     if first_index is None:
         print("\033[91mCaution!!! No times in graph with corresponding odometry time.\033[0m")
         return
     # running through the nodes of the graph (non visited yet)
     for i in range(first_index, len(nodeloc.graphslam_times)):
         time_graph1 = nodeloc.graphslam_times[i]
-        gpsi = nodeloc.gps_buffer.interpolated_gps_at_time(time_graph1)
+        gpsi = nodeloc.gps_buffer.interpolated_gps_at_time(time_graph1, delta_threshold_s=1)
         # reset proc time
         nodeloc.gps_buffer.last_processed_time = time_graph1
-        nodeloc.graphslam.add_GPSfactor(x=gpsi.x,
-                                        y=gpsi.y,
-                                        utmaltitude=gpsi.altitude)
+        if gpsi is None:
+            continue
+        # add a GPS factor on node i of the graph.aution
+        print('ADD GPS FACTOR!!!')
+        nodeloc.graphslam.add_GPSfactor(utmx=gpsi.x,
+                                        utmy=gpsi.y,
+                                        utmaltitude=gpsi.altitude,
+                                        gpsnoise=np.sqrt(gpsi.position_covariance),
+                                        i=i)
+
+
+def filter_and_convert_gps_observations(gpsposition):
+    """
+    filter gps and convert to UTM
+    """
+    # filter gps readings
+    if gpsposition.status < PARAMETERS.config.get('gps').get('min_status'):
+        return None
+    # filter gps readings
+    if np.sqrt(gpsposition.position_covariance[0]) > PARAMETERS.config.get('gps').get('max_sigma_xy'):
+        return None
+    # convert to UTM
+    utm_ref = PARAMETERS.config.get('gps').get('utm_reference')
+    utmposition = gpsposition.to_utm(utm_ref)
+    return utmposition
+
+
+
+#
+# def convert_and_filter_gps(msg):
+#     max_sigma_xy = PARAMETERS.config.get('gps').get('max_sigma_xy')
+#     min_status = PARAMETERS.config.get('gps').get('min_status')
+#     if msg.status.status < min_status:
+#         return None
+#     sigma_xy = np.sqrt(msg.position_covariance[0])
+#     if sigma_xy > max_sigma_xy:
+#         return None
+#     df_gps = {'latitude': msg.latitude,
+#               'longitude': msg.longitude,
+#               'altitude': msg.altitude}
+#     # status = df_gps['status']
+#     # base reference system
+#     config_ref = {}
+#     config_ref['latitude'] = PARAMETERS.config.get('gps').get('utm_reference').get('latitude')
+#     config_ref['longitude'] = PARAMETERS.config.get('gps').get('utm_reference').get('longitude')
+#     config_ref['altitude'] = PARAMETERS.config.get('gps').get('utm_reference').get('altitude')
+#     df_utm = gps2utm(df_gps, config_ref)
+#     # convert to utm
+#     return df_utm
+
+
+
 
 #
 # def compute_relative_transformation(lidarscanarray, posesarray, i, j, T0_gps):

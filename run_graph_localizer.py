@@ -6,7 +6,8 @@ We are integrating odometry, scanmatching odometry and (if present) GPS.
 """
 import rospy
 import numpy as np
-from graphSLAM.helper_functions import update_sm_observations, update_odo_observations
+from graphSLAM.helper_functions import update_sm_observations, update_odo_observations, \
+    filter_and_convert_gps_observations, update_gps_observations
 from nav_msgs.msg import Odometry
 from observations.gpsbuffer import GPSBuffer, GPSPosition
 from observations.posesbuffer import PosesBuffer, Pose
@@ -24,28 +25,6 @@ from tools.gpsconversions import gps2utm
 fig, ax = plt.subplots()
 canvas = FigureCanvas(fig)
 
-
-
-def convert_and_filter_gps(msg):
-    max_sigma_xy = PARAMETERS.config.get('gps').get('max_sigma_xy')
-    min_status = PARAMETERS.config.get('gps').get('min_status')
-    if msg.status.status < min_status:
-        return None
-    sigma_xy = np.sqrt(msg.position_covariance[0])
-    if sigma_xy > max_sigma_xy:
-        return None
-    df_gps = {'latitude': msg.latitude,
-              'longitude': msg.longitude,
-              'altitude': msg.altitude}
-    # status = df_gps['status']
-    # base reference system
-    config_ref = {}
-    config_ref['latitude'] = PARAMETERS.config.get('gps').get('utm_reference').get('latitude')
-    config_ref['longitude'] = PARAMETERS.config.get('gps').get('utm_reference').get('longitude')
-    config_ref['altitude'] = PARAMETERS.config.get('gps').get('utm_reference').get('altitude')
-    df_utm = gps2utm(df_gps, config_ref)
-    # convert to utm
-    return df_utm
 
 
 class LocalizationROSNode:
@@ -83,19 +62,12 @@ class LocalizationROSNode:
         # store gps readings (in utm)
         self.gps_buffer = GPSBuffer(maxlen=1000)
 
-        self.skip_optimization = 200
+        self.skip_optimization = 30
         self.current_key = 0
         self.optimization_index = 1
-        # gparhslam times
+        # gparhslam times. Each node in the graph has an associated time
         self.graphslam_times = []
         self.start_time = None
-
-        # gps
-        # self.last_gps = None
-        # self.utm_valid_positions = []
-        # time
-
-
 
     def odom_callback(self, msg):
         """
@@ -140,41 +112,35 @@ class LocalizationROSNode:
             self.start_time = timestamp
         gpsposition = GPSPosition()
         gpsposition = gpsposition.from_message(msg)
-        # filter gps readings
-        if gpsposition.status < PARAMETERS.config.get('gps').get('min_status'):
-            return
-        # filter gps readings
-        if np.sqrt(gpsposition.position_covariance[0]) > PARAMETERS.config.get('gps').get('max_sigma_xy'):
-            return
-        # convert to UTM
-        utm_ref = PARAMETERS.config.get('gps').get('utm_reference')
-        utmposition = gpsposition.to_utm(utm_ref)
-        # filter
-        # gpspose.from_message(msg.pose.pose)
-        self.gps_buffer.append(utmposition, timestamp)
+        # filter gps position
+        utmposition = filter_and_convert_gps_observations(gpsposition)
+        if utmposition is not None:
+            self.gps_buffer.append(utmposition, timestamp)
 
     def update_graph_timer_callback(self, event):
         """
         Called at a fixed timestamp to integrate new observations in the graph
         """
+        print('UPDATE OBSERVATIONS!! SM, ODO, GPS')
         update_sm_observations(self)
         update_odo_observations(self)
         update_gps_observations(self)
 
         self.optimization_index += 1
-        if self.optimization_index % self.skip_optimization:
+        if self.optimization_index % self.skip_optimization == 0:
             print(300*'+')
             print('Optimize Graph!!')
             print(300 * '+')
             self.graphslam.optimize()
+        else:
+            print('Skipping optimization')
+            print('self.optimization index: ', self.optimization_index)
 
 
 
 
 
 
-
-        # integrate GPS measurements (interpolated)
 
 
     # def odom_callback(self, msg):
