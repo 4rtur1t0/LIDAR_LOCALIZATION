@@ -129,6 +129,25 @@ class GraphSLAM():
             gpsnoise = gtsam.noiseModel.Diagonal.Sigmas(sigmas=gpsnoise)
             self.graph.add(gtsam.GPSFactor(X(i), utm, gpsnoise))
 
+    def add_ARUCO_factor(self, atb, i, aruco_id):
+        """
+        Estimating a prior factor on X(i), given the aruco_id and the transformation
+        T camera-aruco (atb).
+        """
+        T_aruco = self.MapAruco.get_transform(aruco_id)
+        noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([5 * np.pi / 180,
+                                                           5 * np.pi / 180,
+                                                           5 * np.pi / 180,
+                                                           1,
+                                                           1,
+                                                           1]))
+        Ta_c = atb.inv()
+        T_prior_x_i = T_aruco*Ta_c*self.Tlidar_cam.inv()
+        Tprior = gtsam.Pose3(T_prior_x_i.array)
+        # add prior factor
+        self.graph.push_back(gtsam.PriorFactorPose3(X(i), Tprior, noise))
+
+
     def optimize(self):
         print(50*'#')
         print('Optimize graphslam')

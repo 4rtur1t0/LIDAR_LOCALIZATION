@@ -105,6 +105,51 @@ def update_gps_observations(nodeloc):
                                         i=i)
 
 
+def update_aruco_observations(nodeloc):
+    #################################################
+    # integrate ARUCO OBSERVATIONS
+    # ARUCO observations use the existing ARUCO landmarks map. Given a relative observation,
+    # we can retrieve and observe the robot position by a inverse transformation
+    #################################################
+    if len(nodeloc.aruco_observations_buffer) == 0:
+        print("\033[91mCaution!!! No aruco observations in buffer yet.\033[0m")
+        return
+    if len(nodeloc.graphslam_times) == 0:
+        print("\033[91mCaution!!! No graph yet.\033[0m")
+        return
+
+    timi_aruco_ini = nodeloc.aruco_observations_buffer.get_last_processed_time()
+    # look for the times in the graph that can be updated with new information
+    indices = np.where(nodeloc.graphslam_times >= timi_aruco_ini)[0]
+    first_index = indices[0] if indices.size > 0 else None
+    if first_index is None:
+        print("\033[91mCaution!!! No times in graph with corresponding aruco time.\033[0m")
+        return
+    # running through the nodes of the graph (non visited yet)
+    # caution, the ARUCO observation is associated to any time that is found to be close
+    # to any time in the graph (close in time, i. e. 0.05 seconds, for example)
+    for i in range(first_index, len(nodeloc.graphslam_times)):
+        time_aruco_i = nodeloc.graphslam_times[i]
+        # get the relative transformation (stored as Pose) that is closest to that time
+        aruco_transform_i = nodeloc.aruco_observations_buffer.get_closest_pose_at_time(time_aruco_i, delta_threshold_s=0.05)
+        index_aruco = nodeloc.aruco_observations_buffer.get_closest_index_to_time(time_aruco_i, delta_threshold_s=0.05)
+        aruco_id = nodeloc.aruco_observations_ids[index_aruco]
+        # reset proc time
+        nodeloc.aruco_observations_buffer.last_processed_time = time_aruco_i
+        if aruco_transform_i is None:
+            continue
+        # add a GPS factor on node i of the graph.aution
+        print('ADD ARUCO FACTOR!!!')
+        Tca = aruco_transform_i
+        Trobot = nodeloc.map.localize_with_aruco(Tca, aruco_id)
+        # add_prior_factor, aruco transform i, aruco_id
+        # nodeloc.graphslam.add_GPSfactor(utmx=gpsi.x,
+        #                                 utmy=gpsi.y,
+        #                                 utmaltitude=gpsi.altitude,
+        #                                 gpsnoise=np.sqrt(gpsi.position_covariance),
+        #                                 i=i)
+
+
 def filter_and_convert_gps_observations(gpsposition):
     """
     filter gps and convert to UTM

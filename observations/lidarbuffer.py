@@ -3,13 +3,11 @@ import bisect
 from collections import deque
 import open3d as o3d
 import copy
-
 import gc
-
 from config import PARAMETERS
 import sensor_msgs.point_cloud2 as pc2
 import numpy as np
-
+import pandas as pd
 
 class LidarBuffer:
     def __init__(self, maxlen=20):
@@ -18,12 +16,23 @@ class LidarBuffer:
         """
         self.times = deque(maxlen=maxlen)
         self.pointclouds = deque(maxlen=maxlen)
-        # stores the pcds that have been processed
-        # self.processed = deque(maxlen=maxlen)
         self.show_registration_result = False
 
     def from_msg(self):
         return
+
+    def read_data(self, directory, filename):
+        full_filename = directory + filename
+        df = pd.read_csv(full_filename)
+        for _, row in df.iterrows():
+            timestamp = int(row['#timestamp [ns]'])
+            self.times.append(timestamp)
+            lidarscan = LidarScan(time=timestamp, pose=None)
+            self.pointclouds.append(lidarscan)
+
+    def save_poses(self, poses):
+        for i in range(len(poses)):
+            self.pointclouds[i].pose = poses[i]
 
     def __len__(self):
         return len(self.times)
