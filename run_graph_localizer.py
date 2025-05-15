@@ -8,12 +8,14 @@ from collections import deque
 import rospy
 import numpy as np
 from graphSLAM.helper_functions import update_sm_observations, update_odo_observations, \
-    filter_and_convert_gps_observations, update_gps_observations, update_aruco_observations
+    filter_and_convert_gps_observations, update_gps_observations, update_aruco_observations, \
+    update_global_sm_observations
 from map.map import Map
 from nav_msgs.msg import Odometry
 from observations.gpsbuffer import GPSBuffer, GPSPosition
 from observations.lidarbuffer import LidarBuffer
 from observations.posesbuffer import PosesBuffer, Pose
+from scanmatcher.scanmatcher import ScanMatcher
 from sensor_msgs.msg import NavSatFix
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
 import matplotlib.pyplot as plt
@@ -73,11 +75,21 @@ class LocalizationROSNode:
         self.last_processed_index = {'ODOSM': 0,
                                        'ODO': 0,
                                        'GPS': 0,
-                                       'ARUCO': 0}
+                                       'ARUCO': 0,
+                                     'GLOBALSM': 0}
         # LOAD THE MAP
         directory = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
         self.map = Map()
         self.map.read_data(directory=directory)
+        # the scanmatching object
+        self.scanmatcher = ScanMatcher()
+
+        # ROS STUFFF
+        print('Initializing global scanmatching node!')
+        rospy.init_node('localization_node')
+        print('Subscribing to PCD, GNSS')
+        print('WAITING FOR MESSAGES!')
+
 
         # ROS STUFFF
         print('Initializing localization node!')
@@ -91,10 +103,14 @@ class LocalizationROSNode:
         rospy.Subscriber('/gnss/fix', NavSatFix, self.gps_callback)
         # the ARUCO observations
         rospy.Subscriber('/aruco_observation', PoseStamped, self.aruco_observation_callback)
+
+        # Set up a timer to periodically update the graphSLAM graph
+        rospy.Timer(rospy.Duration(1), self.update_graph_timer_callback)
+        # Set up a timer to compute
+        rospy.Timer(rospy.Duration(1), self.compute_scanmatching_to_map)
         # Set up a timer to periodically update the plot
         rospy.Timer(rospy.Duration(2), self.plot_timer_callback)
-        # Set up a timer to periodically update the graph
-        rospy.Timer(rospy.Duration(1), self.update_graph_timer_callback)
+
         # Publisher
         self.pub = rospy.Publisher('/localized_pose', Odometry, queue_size=10)
 
@@ -161,6 +177,7 @@ class LocalizationROSNode:
         update_sm_observations(self)
         update_odo_observations(self)
         update_gps_observations(self)
+
         # update_aruco_observations(self)
 
         self.optimization_index += 1
@@ -189,23 +206,16 @@ class LocalizationROSNode:
             T = self.graphslam.get_solution_index(last_index-1)
             self.publish_pose(T)
 
-    # def compute_scanmatching_to_map(self, event):
-    #     """
-    #     Called at a fixed timestamp to integrate new observations in the graph
-    #     """
-    #     print('COMPUTE scanmatching to map')
-    #     update_sm_observations(self)
-    #
-    #
-    #     self.optimization_index += 1
-    #     if self.optimization_index % self.skip_optimization == 0:
-    #         print(300*'+')
-    #         print('Optimize Graph!!')
-    #         print(300 * '+')
-    #         self.graphslam.optimize()
-    #     else:
-    #         print('Skipping optimization')
-    #         print('self.optimization index: ', self.optimization_index)
+    def compute_scanmatching_to_map(self, event):
+        """
+            final, should be:
+            - look for last the current estimation of the pose.
+            - look for nearby poses in the map. In euclidean distance. Compute the relative transformation. I.e., this
+            assumes that there is no error in the current estimation of the pose.
+            - compute the prior, assuming that the map is correct. This effectively localizes the robot in the map.
+        """
+        update_global_sm_observations(self)
+
 
     def publish_pose(self, T):
         if T is None:

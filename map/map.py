@@ -96,6 +96,15 @@ class Map():
         pcd, lidar_time = self.lidarscanarray.get_closest_to_time(timestamp=timestamp, delta_threshold_s=delta_threshold_s)
         return pcd, lidar_time
 
+    def get_closest_pose(self, posei, delta_threshold_m=3.0):
+        positions = self.robotpath.get_positions()
+        distances = np.linalg.norm(positions-posei, axis=1)
+        closest_index = np.argmin(distances)
+        if distances[closest_index] < delta_threshold_m:
+            return self.robotpath[closest_index]
+        return None
+
+
     # def localize_with_aruco(self, Tca, aruco_id, **kwargs):
     #     """
     #     Performs an initial localization step

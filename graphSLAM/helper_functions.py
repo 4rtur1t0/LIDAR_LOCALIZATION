@@ -1,4 +1,5 @@
 import numpy as np
+from artelib.homogeneousmatrix import HomogeneousMatrix
 from config import PARAMETERS
 
 
@@ -51,8 +52,8 @@ def update_odo_observations(nodeloc):
     for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times) - 1):
         time_graph1 = nodeloc.graphslam_times[i]
         time_graph2 = nodeloc.graphslam_times[i + 1]
-        odoi = nodeloc.odom_buffer.interpolated_pose_at_time(time_graph1)
-        odoj = nodeloc.odom_buffer.interpolated_pose_at_time(time_graph2)
+        odoi, _ = nodeloc.odom_buffer.interpolated_pose_at_time(time_graph1)
+        odoj, _ = nodeloc.odom_buffer.interpolated_pose_at_time(time_graph2)
         if odoi is None or odoj is None:
             print('NO ODO FOR these graphslam nodes, SKIPPING')
             continue
@@ -99,6 +100,82 @@ def update_gps_observations(nodeloc):
                                         gpsnoise=np.sqrt(gpsi.position_covariance),
                                         i=i)
         nodeloc.last_processed_index['GPS'] = i + 1
+
+
+def update_global_sm_observations(nodeloc):
+    if len(nodeloc.pcdbuffer) == 0:
+        print("\033[91mCaution!!! No gps in buffer yet.\033[0m")
+        return
+    if len(nodeloc.graphslam_times) == 0:
+        print("\033[91mCaution!!! No graph yet.\033[0m")
+        return
+
+    first_index_in_graphslam = nodeloc.last_processed_index['GLOBALSM']
+    # running through the nodes of the graph (non visited yet). Looking for relative scanmatching to the map
+    for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times)):
+        # Get the solution i on the graph
+        T0i = nodeloc.graphslam.get_solution_index(i)
+        time_i = nodeloc.graphslam_times[i]
+        # retrieve the closest pointcloud in the buffer associated to time_i
+        current_pcd = nodeloc.pcdbuffer.get_closest_to_time(timestamp=time_i, delta_threshold_s=1.0)
+
+        # get the closest pose on the map.
+        map_posej, time_map = nodeloc.map.get_closest_pose(timestamp=T0i.pos(), delta_threshold_s=1.0)
+        if map_posej is None:
+            return
+
+
+        # compute the initial relative transformation.
+
+
+        # compute registration
+
+
+        # compute global transformation T0i= T0j*Tij.inv()
+
+        # add a prior factor to T0i
+
+    # current_pcd_time = nodeloc.pcdbuffer.times[i]
+    #
+    # current_pcd_time = current_pcd_time + 0.5
+
+    # current_time = rospy.Time.now().to_sec()
+    # diff = current_time-current_pcd_time
+    # current test approach: find a map pose closest in time
+    # needed approach: get pointclouds in the map closest in euclidean distance
+
+    #     # continue
+    # # get the closest pcd in the map
+    # map_pcd, pointcloud_time = nodeloc.map.get_pcd_closest_to_time(timestamp=current_pcd_time,
+    #                                                             delta_threshold_s=1.0)
+    # diff = current_pcd_time - pointcloud_time
+    # print('Diff in time: current pcd and map pcd: ', diff)
+    #
+    # # process the current pcd
+    # current_pcd.down_sample(voxel_size=None)
+    # current_pcd.filter_points()
+    # current_pcd.estimate_normals()
+    # # current_pcd.draw_cloud()
+    #
+    # # current the map pcd
+    # map_pcd.load_pointcloud()
+    # map_pcd.down_sample(voxel_size=None)
+    # map_pcd.filter_points()
+    # map_pcd.estimate_normals()
+    # # map_pcd.draw_cloud()
+    # # now, in this, test, consider that the initial transformation is the identity
+    # # In the final approach: consider that the relative initial transformation is known
+    # # Tij0 = HomogeneousMatrix(Vector([0.1, 0.1, 0]), Euler([0.1, 0.1, 0.1]))
+    # Tij0 = HomogeneousMatrix()
+    # Tij = nodeloc.scanmatcher.registration(current_pcd, map_pcd, Tij_0=Tij0, show=False)
+    #
+    # map_pcd.unload_pointcloud()
+    # # the map pose (pointcloud)
+    # T0j = map_pose.T()
+    # # estimate the initial i
+    # T0i = T0j * Tij.inv()
+    # nodeloc.prior_estimations.append(T0i)
+    # nodeloc.processed_map_poses.append(map_pose.T())
 
 
 def update_aruco_observations(nodeloc):
