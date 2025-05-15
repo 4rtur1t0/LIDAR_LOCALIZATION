@@ -52,6 +52,14 @@ class GPSBuffer():
         positions = np.array(self.positions)
         return positions
 
+    def get_utm_positions(self):
+        utm_positions = []
+        for i in range(len(self.positions)):
+            pos = self.positions[i]
+            utm_positions.append([pos.x, pos.y, pos.altitude])
+        utm_positions = np.array(utm_positions)
+        return utm_positions
+
     def get_at_exact_time(self, timestamp):
         """
         Get the observation found at a exact, particular, time. None if not found.
@@ -98,6 +106,8 @@ class GPSBuffer():
         computing an interpolation
         """
         idx1, t1, idx2, t2 = self.find_closest_times_around_t_bisect(timestamp)
+        if idx1 is None:
+            return None
         print('Time distances: ', (timestamp-t1), (t2-timestamp))
         if ((timestamp - t1) > delta_threshold_s) or ((t2-timestamp) > delta_threshold_s):
             print('interpolated_pose_at_time trying to interpolate with time difference greater than threshold')
@@ -115,6 +125,9 @@ class GPSBuffer():
         return None
 
     def find_closest_times_around_t_bisect(self, t):
+        if len(self.times) < 2:
+            print('cannot find two times in a one dim array.')
+            return None, None, None, None
         # Find the index where t would be inserted in sorted_times
         idx = bisect.bisect_left(self.times, t)
         # Determine the two closest times

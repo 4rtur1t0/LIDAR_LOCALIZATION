@@ -29,11 +29,14 @@ class PosesBuffer():
         return self.poses[index]
 
     def read_data(self, directory, filename):
+        """
+        Caution: timestamps are stored in secs.
+        """
         full_filename = directory + filename
         df = pd.read_csv(full_filename)
         for _, row in df.iterrows():
             try:
-                self.times.append(row['#timestamp [ns]'])
+                self.times.append(float(row['#timestamp [ns]']/1e9))
             except:
                 self.times.append(None)
             self.poses.append(Pose(row))
@@ -150,19 +153,24 @@ class PosesBuffer():
         computing an interpolation
         """
         idx1, t1, idx2, t2 = self.find_closest_times_around_t_bisect(timestamp)
+        if idx1 is None:
+            return None, None
         print('Time distances: ', (timestamp-t1), (t2-timestamp))
         if ((timestamp - t1) > delta_threshold_s) or ((t2-timestamp) > delta_threshold_s):
             print('interpolated_pose_at_time trying to interpolate with time difference greater than threshold')
-            return None
+            return None, None
         # ensures t1 < t < t2
         if t1 <= timestamp <= t2:
             odo1 = self.poses[idx1]
             odo2 = self.poses[idx2]
             odointerp = self.interpolate_pose(odo1, t1, odo2, t2, timestamp)
-            return odointerp
+            return odointerp, t1
         return None
 
     def find_closest_times_around_t_bisect(self, t):
+        if len(self.times) < 2:
+            print('cannot find two times in a one dim array.')
+            return None, None, None, None
         # Find the index where t would be inserted in sorted_times
         idx = bisect.bisect_left(self.times, t)
         # Determine the two closest times

@@ -68,6 +68,7 @@ class Map():
         df = pd.read_csv(full_filename_filename_aruco)
         for _, row in df.iterrows():
             self.landmarks_aruco_ids.append(int(row['aruco_id']))
+        self.landmarks_aruco_ids = np.array(self.landmarks_aruco_ids)
 
     def draw_all_clouds(self):
         self.lidarscanarray.draw_all_clouds()
@@ -86,6 +87,14 @@ class Map():
                                      heights=[-2, 1.2],
                                      keyframe_sampling=keyframe_sampling,
                                      terraplanist=terraplanist)
+
+    def get_pose_closest_to_time(self, timestamp, delta_threshold_s=1.0):
+        interp_pose, pose_time = self.robotpath.interpolated_pose_at_time(timestamp, delta_threshold_s=delta_threshold_s)
+        return interp_pose, pose_time
+
+    def get_pcd_closest_to_time(self, timestamp, delta_threshold_s=1.0):
+        pcd, lidar_time = self.lidarscanarray.get_closest_to_time(timestamp=timestamp, delta_threshold_s=delta_threshold_s)
+        return pcd, lidar_time
 
     # def localize_with_aruco(self, Tca, aruco_id, **kwargs):
     #     """
@@ -111,26 +120,35 @@ class Map():
     #     Tgps_robot.print()
     #     return Tgps_robot
 
-    def localize_with_aruco(self, Tca, aruco_id):
+    def localize_with_aruco(self, Tca, aruco_id, **kwargs):
         """
         Performs an initial localization step
         """
         print('INITIAL LOCALIZATION!')
         print('FOUND ARUCO')
         # Tlidar_gps = kwargs.get('Tlidar_gps')
-        # Tlidar_cam = kwargs.get('Tlidar_cam')
+        Tlidar_cam = kwargs.get('Tlidar_cam')
         # Tgps_lidar = Tlidar_gps.inv()
         # observation of the ARUCO from the gps reference system
         # Tgps_aruco = Tgps_lidar * Tlidar_cam * Tca
         # aruco_id = arucoobsarray.get_aruco_id(j)
         # aruco_ids_in_map = self.landmarks_aruco.aruco_ids
-        index = np.where(self.landmarks_aruco.aruco_ids == aruco_id)[0]
-        print('Found aruco_id at position: ', index)
-        Tglobal_aruco = self.landmarks_aruco.poses[index[0]]
+        print('localize_with_aruco')
+        print('Tlidar_cam')
+        Tlidar_cam.print()
+        try:
+            print('ARUCO_ID is:', aruco_id)
+            index = np.where(self.landmarks_aruco_ids == aruco_id)[0][0]
+            print('Found aruco_id at position: ', index)
+        except:
+            print('ARUCO ID not found in map!')
+            return None
+
+        Tglobal_aruco = self.landmarks_aruco.poses[index]
         Tglobal_aruco = Tglobal_aruco.T()
         print('Found ARUCO, aruco_id, ', aruco_id, 'at global pose: ')
         Tglobal_aruco.print()
-        Trobot = Tglobal_aruco*Tca.inv()
+        Trobot = Tglobal_aruco*Tca.inv()*Tlidar_cam.inv()
         print('Robot is localized at: ')
         Trobot.print()
         return Trobot

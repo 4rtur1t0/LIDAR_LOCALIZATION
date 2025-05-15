@@ -15,7 +15,7 @@ prior_xyz_sigma = 1000.0000000
 # Declare the 3D rotational standard deviations of the prior factor's Gaussian model, in degrees.
 prior_rpy_sigma = 100.0000000
 # Declare the 3D translational standard deviations of the odometry factor's Gaussian model, in meters.
-odo_xyz_sigma = 0.05
+odo_xyz_sigma = 0.1
 # Declare the 3D rotational standard deviations of the odometry factor's Gaussian model, in degrees.
 odo_rpy_sigma = 5
 # Declare the 3D translational standard deviations of the scanmatcher factor's Gaussian model, in meters.
@@ -27,6 +27,11 @@ icp_rpy_sigma = 2
 # gps_altitude_sigma = 3.0
 gps_xy_sigma = 8
 gps_altitude_sigma = 100.0
+
+# Declare the 3D translational standard deviations of the odometry factor's Gaussian model, in meters.
+aruco_xyz_sigma = 0.05
+# Declare the 3D rotational standard deviations of the odometry factor's Gaussian model, in degrees.
+aruco_rpy_sigma = 5
 
 # Declare the noise models
 PRIOR_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([prior_rpy_sigma*np.pi/180,
@@ -52,6 +57,12 @@ ODO_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([odo_rpy_sigma*np.pi/180,
 
 GPS_NOISE = gtsam.Point3(gps_xy_sigma, gps_xy_sigma, gps_altitude_sigma)
 
+ARUCO_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([aruco_rpy_sigma*np.pi/180,
+                                                            aruco_rpy_sigma*np.pi/180,
+                                                            aruco_rpy_sigma*np.pi/180,
+                                                            aruco_xyz_sigma,
+                                                            aruco_xyz_sigma,
+                                                            aruco_xyz_sigma]))
 
 class GraphSLAM():
     def __init__(self, T0, Tlidar_gps, Tlidar_cam, max_number_of_landmarks=1000):
@@ -129,23 +140,23 @@ class GraphSLAM():
             gpsnoise = gtsam.noiseModel.Diagonal.Sigmas(sigmas=gpsnoise)
             self.graph.add(gtsam.GPSFactor(X(i), utm, gpsnoise))
 
-    def add_ARUCO_factor(self, atb, i, aruco_id):
+    def add_prior_factor_aruco(self, T_prior_x_i, i):
         """
         Estimating a prior factor on X(i), given the aruco_id and the transformation
         T camera-aruco (atb).
         """
-        T_aruco = self.MapAruco.get_transform(aruco_id)
-        noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([5 * np.pi / 180,
-                                                           5 * np.pi / 180,
-                                                           5 * np.pi / 180,
-                                                           1,
-                                                           1,
-                                                           1]))
-        Ta_c = atb.inv()
-        T_prior_x_i = T_aruco*Ta_c*self.Tlidar_cam.inv()
+        # T_aruco = self.MapAruco.get_transform(aruco_id)
+        # noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([5 * np.pi / 180,
+        #                                                    5 * np.pi / 180,
+        #                                                    5 * np.pi / 180,
+        #                                                    1,
+        #                                                    1,
+        #                                                    1]))
+        # Ta_c = atb.inv()
+        # T_prior_x_i = T_aruco*Ta_c*self.Tlidar_cam.inv()
         Tprior = gtsam.Pose3(T_prior_x_i.array)
         # add prior factor
-        self.graph.push_back(gtsam.PriorFactorPose3(X(i), Tprior, noise))
+        self.graph.push_back(gtsam.PriorFactorPose3(X(i), Tprior, ARUCO_NOISE))
 
 
     def optimize(self):
@@ -288,7 +299,7 @@ class GraphSLAM():
     def get_solution(self):
         return self.current_estimate
 
-    def get_solution_last(self, index):
+    def get_solution_index(self, index):
         if self.current_estimate.exists(X(index)):
             ce = self.current_estimate.atPose3(X(index))
             T = HomogeneousMatrix(ce.matrix())

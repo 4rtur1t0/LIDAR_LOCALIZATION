@@ -41,7 +41,7 @@ def compute_rel_distance(odo1, odo2):
 
 class ScanmatchingNode:
     def __init__(self):
-        print('Initializing scanmatching node!')
+        print('Initializing local scanmatching node!')
         rospy.init_node('scan_matching_sync_node')
         print('Subscribing to ODOMETRY and pointclouds')
         print('CAUTION: odometry and poinclouds are synchronized with filter messages')
@@ -63,6 +63,7 @@ class ScanmatchingNode:
         self.pub = rospy.Publisher(OUTPUT_TOPIC, Odometry, queue_size=10)
         # stores odometry poses as a short buffer with deque
         self.odombuffer = PosesBuffer(maxlen=1000)
+        # the lidar buffer
         self.pcdbuffer = LidarBuffer(maxlen=30)
         # store the results from the beginning of the experiment
         self.relative_transforms = []

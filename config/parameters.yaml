@@ -1,7 +1,7 @@
 gps:
   delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
   min_status: 0 # minimum status for a GPS to be valid
-  max_sigma_xy: 4 # max xy sigma
+  max_sigma_xy: 5 # max xy sigma
   utm_reference:
     latitude: 38.275185
     longitude: -0.685623

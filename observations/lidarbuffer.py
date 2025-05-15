@@ -9,6 +9,7 @@ import sensor_msgs.point_cloud2 as pc2
 import numpy as np
 import pandas as pd
 
+
 class LidarBuffer:
     def __init__(self, maxlen=20):
         """
@@ -22,12 +23,15 @@ class LidarBuffer:
         return
 
     def read_data(self, directory, filename):
+        """
+        Caution: timestamps are stored in seconds (s).
+        """
         full_filename = directory + filename
         df = pd.read_csv(full_filename)
         for _, row in df.iterrows():
-            timestamp = int(row['#timestamp [ns]'])
+            timestamp = float(row['#timestamp [ns]']/1e9)
             self.times.append(timestamp)
-            lidarscan = LidarScan(time=timestamp, pose=None)
+            lidarscan = LidarScan(directory=directory, time=timestamp, pose=None)
             self.pointclouds.append(lidarscan)
 
     def save_poses(self, poses):
@@ -72,12 +76,26 @@ class LidarBuffer:
 
     def get_at_exact_time(self, timestamp):
         """
-        Get the pointcloud found at a exact, particular, timestamp
+        Get the pointcloud found at a exact, particular, timestamp. None elsewhere.
         """
-        index = bisect.bisect_left(self.pointclouds, timestamp)
+        index = bisect.bisect_left(self.times, timestamp)
         if index < len(self.times) and self.times[index] == timestamp:
             print(f"Element {timestamp} found at index {index}")
             return self.pointclouds[index]
+        else:
+            return None
+
+    def get_closest_to_time(self, timestamp, delta_threshold_s=1.0):
+        """
+        Get the pointcloud found at the closest time, within deltathreshold
+        """
+        index = bisect.bisect_left(self.times, timestamp)
+        delta = delta_threshold_s
+        if index < len(self.times):
+            delta = abs(self.times[index]-timestamp)
+        if delta < delta_threshold_s:
+            print(f"Element {timestamp} found at index {index}")
+            return self.pointclouds[index], self.times[index]
         else:
             return None
 
@@ -125,7 +143,10 @@ class LidarScan():
         self.pointcloud.points = o3d.utility.Vector3dVector(cloud)
 
     def load_pointcloud(self):
-        filename = self.directory + '/robot0/lidar/data/' + str(self.time) + '.pcd'
+        """
+        Caution: the pcd filename is stored in nanoseconds
+        """
+        filename = self.directory + '/robot0/lidar/data/' + str(int(1e9*self.time)) + '.pcd'
         print('Reading pointcloud: ', filename)
         # Load the original complete pointcloud
         self.pointcloud = o3d.io.read_point_cloud(filename)
@@ -205,7 +226,7 @@ class LidarScan():
 
     def draw_registration_result(self, other, transformation):
         source_temp = copy.deepcopy(self.pointcloud)
-        target_temp = copy.deepcopy(other.pcd)
+        target_temp = copy.deepcopy(other.pointcloud)
         source_temp.paint_uniform_color([1, 0, 0])
         target_temp.paint_uniform_color([0, 0, 1])
         source_temp.transform(transformation)
