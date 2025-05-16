@@ -57,7 +57,7 @@ class LocalizationROSNode:
         # store scanmatcher odometry in deque fashion
         self.odom_sm_buffer = PosesBuffer(maxlen=5000)
         # store gps readings (in utm)
-        self.gps_buffer = GPSBuffer(maxlen=1000)
+        self.gps_buffer = GPSBuffer(maxlen=5000)
         # store ARUCO observations and ids
         self.aruco_observations_buffer = PosesBuffer(maxlen=5000)
         self.aruco_observations_ids = deque(maxlen=5000)
@@ -71,7 +71,7 @@ class LocalizationROSNode:
         # gparhslam times. Each node in the graph has an associated time
         self.graphslam_times = []
         self.start_time = None
-
+        self.last_odom_pose = None
         self.last_processed_index = {'ODOSM': 0,
                                        'ODO': 0,
                                        'GPS': 0,
@@ -91,11 +91,11 @@ class LocalizationROSNode:
         print('WAITING FOR MESSAGES!')
 
 
-        # ROS STUFFF
-        print('Initializing localization node!')
-        rospy.init_node('localization_node')
-        print('Subscribing to ODOMETRY, GNSS')
-        print('WAITING FOR MESSAGES!')
+        # # ROS STUFFF
+        # print('Initializing localization node!')
+        # rospy.init_node('localization_node')
+        # print('Subscribing to ODOMETRY, GNSS')
+        # print('WAITING FOR MESSAGES!')
 
         # Subscriptions
         rospy.Subscriber('/husky_velocity_controller/odom', Odometry, self.odom_callback)
@@ -107,7 +107,7 @@ class LocalizationROSNode:
         # Set up a timer to periodically update the graphSLAM graph
         rospy.Timer(rospy.Duration(1), self.update_graph_timer_callback)
         # Set up a timer to compute
-        rospy.Timer(rospy.Duration(1), self.compute_scanmatching_to_map)
+        # rospy.Timer(rospy.Duration(1), self.compute_scanmatching_to_map)
         # Set up a timer to periodically update the plot
         rospy.Timer(rospy.Duration(2), self.plot_timer_callback)
 
@@ -121,13 +121,21 @@ class LocalizationROSNode:
     def odom_callback(self, msg):
         """
             Get last odometry reading and append to buffer.
+            Directly calling update_odo_observations, which should be fast at every step.
         """
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
             self.start_time = timestamp
+
         pose = Pose()
         pose.from_message(msg.pose.pose)
+
+        if self.last_odom_pose is None:
+            self.last_odom_pose = pose
+        # storing odometry buffer, but not really using it
         self.odom_buffer.append(pose, timestamp)
+        # CAUTION! directly updating graph without buffer
+        update_odo_observations(self, pose, timestamp)
 
     def odom_sm_callback(self, msg):
         """
@@ -168,14 +176,28 @@ class LocalizationROSNode:
         aruco_id = int(msg.header.frame_id)
         self.aruco_observations_ids.append(aruco_id)
 
+    # def update_odo_graph_timer_callback(self):
+    #     """
+    #     Called at a fixed timestamp to create new nodes in the graph.
+    #     New nodes are created whenever the robot has traversed or turned a fixed distance
+    #     in terms of odometry.
+    #     """
+    #     update_odo_observations(self)
+
+
     def update_graph_timer_callback(self, event):
         """
         Called at a fixed timestamp to integrate new observations in the graph
+        This function integrates relations in terms of:
+        - Consecutive, relative scanmatching Edge relations.
+        - Global, scanmatching to map.
+        - GPS observations.
+        These observations can be integrated in the graph with some delay in time.
         """
         start_time = time.time()
         print('UPDATE OBSERVATIONS!! SM, ODO, GPS')
         update_sm_observations(self)
-        update_odo_observations(self)
+        # update_odo_observations(self)
         update_gps_observations(self)
 
         # update_aruco_observations(self)
@@ -193,7 +215,7 @@ class LocalizationROSNode:
         print(f"update_graph_timer_callback time:, {end_time-start_time:.4f} seconds")
         self.update_graph_timer_callback_times.append(end_time-start_time)
 
-        if len(self.graphslam_times):
+        if len(self.graphslam_times) and len(self.odom_buffer):
             last_index = len(self.graphslam_times)
             last_solution_time = self.graphslam_times[-1]
             odometry_times = self.odom_buffer.get_times()
@@ -206,15 +228,15 @@ class LocalizationROSNode:
             T = self.graphslam.get_solution_index(last_index-1)
             self.publish_pose(T)
 
-    def compute_scanmatching_to_map(self, event):
-        """
-            final, should be:
-            - look for last the current estimation of the pose.
-            - look for nearby poses in the map. In euclidean distance. Compute the relative transformation. I.e., this
-            assumes that there is no error in the current estimation of the pose.
-            - compute the prior, assuming that the map is correct. This effectively localizes the robot in the map.
-        """
-        update_global_sm_observations(self)
+    # def compute_scanmatching_to_map(self, event):
+    #     """
+    #         final, should be:
+    #         - look for last the current estimation of the pose.
+    #         - look for nearby poses in the map. In euclidean distance. Compute the relative transformation. I.e., this
+    #         assumes that there is no error in the current estimation of the pose.
+    #         - compute the prior, assuming that the map is correct. This effectively localizes the robot in the map.
+    #     """
+    #     update_global_sm_observations(self)
 
 
     def publish_pose(self, T):

@@ -5,70 +5,131 @@ from config import PARAMETERS
 
 def update_sm_observations(nodeloc):
     """
-    SM observations create a new state and a relation between two states.
+    # SM observations create a new state and a relation between two states.
+    SM observations create relationships between states. The creation of new nodes in the graph is done
+    with the odometry, which is faster.
     """
     print('UPDATING with last SM observations')
-    k = 0
-    ############################################
-    # add sm observations as edges
-    # all sm observations are removed afterwards
-    ############################################
-    for i in range(len(nodeloc.odom_sm_buffer) - 1):
-        print('Tiempo scanmatcher', nodeloc.odom_sm_buffer.times[i] - nodeloc.start_time)
-        Ti = nodeloc.odom_sm_buffer[i].T()
-        Tj = nodeloc.odom_sm_buffer[i + 1].T()
-        Tij = Ti.inv() * Tj
-        print(50*'*')
-        print('Print creating new state: (', nodeloc.current_key + 1, ')')
-        print('Adding Graphslam INITIAL SMODO edge: (', nodeloc.current_key, ',', nodeloc.current_key + 1, ')')
-        print(50 * '*')
-        nodeloc.graphslam.add_initial_estimate(Tij, nodeloc.current_key + 1)
-        nodeloc.graphslam.add_edge(Tij, nodeloc.current_key, nodeloc.current_key + 1, 'SMODO')
-        nodeloc.current_key += 1
-        next_time = nodeloc.odom_sm_buffer.times[i + 1]
-        nodeloc.graphslam_times = np.append(nodeloc.graphslam_times, next_time)
-        k += 1
-    # removed used odom_sm observations
-    for j in range(k):
-        nodeloc.odom_sm_buffer.popleft()
-
-
-def update_odo_observations(nodeloc):
-    #################################################
-    # integrate ODOMETRY measurements (interpolated)
-    # find first odometry time
-    #################################################
-    if len(nodeloc.odom_buffer) == 0:
-        print("\033[91mCaution!!! No odometry in buffer yet.\033[0m")
+    if len(nodeloc.odom_sm_buffer) == 0:
+        print("\033[91mCaution!!! No odometry SM in buffer yet.\033[0m")
         return
     if len(nodeloc.graphslam_times) == 0:
         print("\033[91mCaution!!! No graph yet.\033[0m")
         return
-    first_index_in_graphslam = nodeloc.last_processed_index['ODO']
-    print('Adding ODO EDGES to the graph')
-    print(50*'?')
-    # running through the nodes of the graph
-    # for each node in the graph, look for corresponding times
+    ############################################
+    # add sm observations as edges
+    # all sm observations are removed afterwards
+    ############################################
+    first_index_in_graphslam = nodeloc.last_processed_index['ODOSM']
+    # given the last processed index in the graph. We iteratively follow
+    # the rest of the nodes and try to include Scanmatching edge relations
     for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times) - 1):
         time_graph1 = nodeloc.graphslam_times[i]
         time_graph2 = nodeloc.graphslam_times[i + 1]
-        odoi, _ = nodeloc.odom_buffer.interpolated_pose_at_time(time_graph1)
-        odoj, _ = nodeloc.odom_buffer.interpolated_pose_at_time(time_graph2)
-        if odoi is None or odoj is None:
-            print('NO ODO FOR these graphslam nodes, SKIPPING')
+        smodoi, _ = nodeloc.odom_sm_buffer.interpolated_pose_at_time(time_graph1)
+        smodoj, _ = nodeloc.odom_sm_buffer.interpolated_pose_at_time(time_graph2)
+        if smodoi is None or smodoj is None:
+            print('NO SMODO FOR these graphslam nodes, SKIPPING')
             continue
-        print('Tiempo odometro', time_graph1 - nodeloc.start_time)
-        Ti = odoi.T()
-        Tj = odoj.T()
+        print('Tiempo odometro scanmatcher', time_graph1 - nodeloc.start_time)
+        Ti = smodoi.T()
+        Tj = smodoj.T()
         Tij = Ti.inv() * Tj
         print(50*'*')
-        print('Adding Graphslam ODO edge: (', i, ',', i+1, ')')
+        print('Adding Graphslam ODOSM edge: (', i, ',', i+1, ')')
         print(50*'*')
-        nodeloc.graphslam.add_edge(Tij, i, i + 1, 'ODO')
+        nodeloc.graphslam.add_edge(Tij, i, i + 1, 'ODOSM')
         # update the last processed index
-        nodeloc.last_processed_index['ODO'] = i + 1
-    print('finished processing ODO')
-    print(50 * '?')
+        nodeloc.last_processed_index['ODOSM'] = i + 1
+        print('finished processing ODOSM')
+        print(50 * '?')
+    # for i in range(len(nodeloc.odom_sm_buffer) - 1):
+    #     print('Tiempo scanmatcher', nodeloc.odom_sm_buffer.times[i] - nodeloc.start_time)
+    #     Ti = nodeloc.odom_sm_buffer[i].T()
+    #     Tj = nodeloc.odom_sm_buffer[i + 1].T()
+    #     Tij = Ti.inv() * Tj
+    #     print(50*'*')
+    #     print('Print creating new state: (', nodeloc.current_key + 1, ')')
+    #     print('Adding Graphslam INITIAL SMODO edge: (', nodeloc.current_key, ',', nodeloc.current_key + 1, ')')
+    #     print(50 * '*')
+    #     nodeloc.graphslam.add_initial_estimate(Tij, nodeloc.current_key + 1)
+    #     nodeloc.graphslam.add_edge(Tij, nodeloc.current_key, nodeloc.current_key + 1, 'SMODO')
+    #     nodeloc.current_key += 1
+    #     next_time = nodeloc.odom_sm_buffer.times[i + 1]
+    #     nodeloc.graphslam_times = np.append(nodeloc.graphslam_times, next_time)
+    #     k += 1
+    # # removed used odom_sm observations
+    # for j in range(k):
+    #     nodeloc.odom_sm_buffer.popleft()
+
+
+def update_odo_observations(nodeloc, pose, timestamp):
+    """
+    ODO observations create a new state and a relation between two states.
+    """
+    #################################################
+    # integrate ODOMETRY measurements (interpolated)
+    # find first odometry time
+    #################################################
+    # if len(nodeloc.odom_buffer) == 0:
+    #     print("\033[91mCaution!!! No odometry in buffer yet.\033[0m")
+    #     return
+    if nodeloc.last_odom_pose is None:
+        print("\033[91mCaution!!! No odometry received yet.\033[0m")
+        return
+    # first_index_in_graphslam = nodeloc.last_processed_index['ODO']
+    odo_ti = nodeloc.last_odom_pose
+    odo_tj = pose
+    # if the distance is larger or the angle is larger that... add pcd to buffer
+    # d_poses = PARAMETERS.config.get('scanmatcher').get('d_poses')
+    # th_poses = PARAMETERS.config.get('scanmatcher').get('th_poses')
+    # Now, only add another pointcloud if the odometry is significantly moved
+    d, th = compute_rel_distance(odo_ti, odo_tj)
+    if d < 0.3 and th < 0.1:
+        # print('Not enough distance traveled. ')
+        # print('No new nodes created in graph.')
+        return
+    print('Adding ODO STATE AND EDGES to the graph')
+    print(50*'?')
+    # for i in range(len(nodeloc.odo_buffer) - 1):
+    print('Tiempo odometry', timestamp)
+    Ti = nodeloc.last_odom_pose.T()
+    Tj = pose.T()
+    Tij = Ti.inv() * Tj
+    print(50*'*')
+    print('Print creating new state from ODO: (', nodeloc.current_key + 1, ')')
+    print('Adding Graphslam INITIAL ODO edge: (', nodeloc.current_key, ',', nodeloc.current_key + 1, ')')
+    print(50 * '*')
+    nodeloc.graphslam.add_initial_estimate(Tij, nodeloc.current_key + 1)
+    nodeloc.graphslam.add_edge(Tij, nodeloc.current_key, nodeloc.current_key + 1, 'ODO')
+    nodeloc.current_key += 1
+    # next_time = nodeloc.odom_sm_buffer.times[i + 1]
+    nodeloc.graphslam_times = np.append(nodeloc.graphslam_times, timestamp)
+    # reset pose
+    nodeloc.last_odom_pose = pose
+        # k += 1
+    # # running through the nodes of the graph
+    # # for each node in the graph, look for corresponding times
+    # for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times) - 1):
+    #     time_graph1 = nodeloc.graphslam_times[i]
+    #     time_graph2 = nodeloc.graphslam_times[i + 1]
+    #     odoi, _ = nodeloc.odom_buffer.interpolated_pose_at_time(time_graph1)
+    #     odoj, _ = nodeloc.odom_buffer.interpolated_pose_at_time(time_graph2)
+    #     if odoi is None or odoj is None:
+    #         print('NO ODO FOR these graphslam nodes, SKIPPING')
+    #         continue
+    #     print('Tiempo odometro', time_graph1 - nodeloc.start_time)
+    #     Ti = odoi.T()
+    #     Tj = odoj.T()
+    #     Tij = Ti.inv() * Tj
+    #     print(50*'*')
+    #     print('Adding Graphslam ODO edge: (', i, ',', i+1, ')')
+    #     print(50*'*')
+    #     nodeloc.graphslam.add_edge(Tij, i, i + 1, 'ODO')
+    #     # update the last processed index
+    #     nodeloc.last_processed_index['ODO'] = i + 1
+    # print('finished processing ODO')
+    # print(50 * '?')
 
 def update_gps_observations(nodeloc):
     #################################################
@@ -103,8 +164,8 @@ def update_gps_observations(nodeloc):
 
 
 def update_global_sm_observations(nodeloc):
-    if len(nodeloc.pcdbuffer) == 0:
-        print("\033[91mCaution!!! No gps in buffer yet.\033[0m")
+    if len(nodeloc.odo_sm_buffer) == 0:
+        print("\033[91mCaution!!! No SM ODO in buffer yet.\033[0m")
         return
     if len(nodeloc.graphslam_times) == 0:
         print("\033[91mCaution!!! No graph yet.\033[0m")
@@ -252,6 +313,18 @@ def compute_scanmatching_to_map(nodeloc):
     # removed used odom_sm observations
     for j in range(k):
         nodeloc.odom_sm_buffer.popleft()
+
+
+def compute_rel_distance(odo1, odo2):
+    Ti = odo1.T()
+    Tj = odo2.T()
+    Tij = Ti.inv() * Tj
+    d = np.linalg.norm(Tij.pos())
+    e1 = np.linalg.norm(Tij.euler()[0].abg)
+    e2 = np.linalg.norm(Tij.euler()[1].abg)
+    theta = min(e1, e2)
+    # print('Relative (d, theta):', d, theta)
+    return d, theta
 
 
 def filter_and_convert_gps_observations(gpsposition):
