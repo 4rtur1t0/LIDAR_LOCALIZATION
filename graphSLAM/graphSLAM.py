@@ -140,7 +140,7 @@ class GraphSLAM():
             gpsnoise = gtsam.noiseModel.Diagonal.Sigmas(sigmas=gpsnoise)
             self.graph.add(gtsam.GPSFactor(X(i), utm, gpsnoise))
 
-    def add_prior_factor_aruco(self, T_prior_x_i, i):
+    def add_prior_factor(self, T_prior_x_i, i):
         """
         Estimating a prior factor on X(i), given the aruco_id and the transformation
         T camera-aruco (atb).

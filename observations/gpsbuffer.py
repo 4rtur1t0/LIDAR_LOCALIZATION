@@ -107,11 +107,11 @@ class GPSBuffer():
         """
         idx1, t1, idx2, t2 = self.find_closest_times_around_t_bisect(timestamp)
         if idx1 is None:
-            return None
+            return None, None
         print('Time distances: ', (timestamp-t1), (t2-timestamp))
         if ((timestamp - t1) > delta_threshold_s) or ((t2-timestamp) > delta_threshold_s):
             print('interpolated_pose_at_time trying to interpolate with time difference greater than threshold')
-            return None
+            return None, None
         # ensures t1 < t < t2
         if t1 <= timestamp <= t2:
             gps1 = self.positions[idx1]
@@ -121,8 +121,8 @@ class GPSBuffer():
                                     covariance=gps1.position_covariance,
                                     status=gps1.status,
                                     config_ref=self.config_ref)
-            return utminterp
-        return None
+            return utminterp, t1
+        return None, None
 
     def find_closest_times_around_t_bisect(self, t):
         if len(self.times) < 2:

@@ -107,6 +107,7 @@ def update_odo_observations(nodeloc, pose, timestamp):
     nodeloc.graphslam_times = np.append(nodeloc.graphslam_times, timestamp)
     # reset pose
     nodeloc.last_odom_pose = pose
+    nodeloc.optimization_index += 1
         # k += 1
     # # running through the nodes of the graph
     # # for each node in the graph, look for corresponding times
@@ -146,7 +147,7 @@ def update_gps_observations(nodeloc):
     # running through the nodes of the graph (non visited yet). Looking for gps observations at that time
     for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times)):
         time_graph1 = nodeloc.graphslam_times[i]
-        gpsi = nodeloc.gps_buffer.interpolated_gps_at_time(time_graph1, delta_threshold_s=1.0)
+        gpsi, _ = nodeloc.gps_buffer.interpolated_gps_at_time(time_graph1, delta_threshold_s=1.0)
         # reset proc time
         nodeloc.gps_buffer.last_processed_time = time_graph1
         if gpsi is None:
@@ -163,28 +164,41 @@ def update_gps_observations(nodeloc):
         nodeloc.last_processed_index['GPS'] = i + 1
 
 
-def update_global_sm_observations(nodeloc):
-    if len(nodeloc.odo_sm_buffer) == 0:
-        print("\033[91mCaution!!! No SM ODO in buffer yet.\033[0m")
+def update_prior_map_observations(nodeloc):
+    if len(nodeloc.map_sm_prior_buffer) == 0:
+        print("\033[91mCaution!!! No SM GLOBAL PRIOR in buffer yet.\033[0m")
         return
     if len(nodeloc.graphslam_times) == 0:
         print("\033[91mCaution!!! No graph yet.\033[0m")
         return
 
-    first_index_in_graphslam = nodeloc.last_processed_index['GLOBALSM']
+    first_index_in_graphslam = nodeloc.last_processed_index['MAPSM']
     # running through the nodes of the graph (non visited yet). Looking for relative scanmatching to the map
     for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times)):
         # Get the solution i on the graph
-        T0i = nodeloc.graphslam.get_solution_index(i)
+        # T0i = nodeloc.graphslam.get_solution_index(i)
         time_i = nodeloc.graphslam_times[i]
-        # retrieve the closest pointcloud in the buffer associated to time_i
-        current_pcd = nodeloc.pcdbuffer.get_closest_to_time(timestamp=time_i, delta_threshold_s=1.0)
+        # try to estimate a prior factor from two consecutive prior factors (i. e. estimations on the true trajectory)
+        prior_factor, _ = nodeloc.prior_global_buffer.interpolated_pose_at_time(time_i, delta_threshold_s=2)
+        # if theres no prior estimation based on the map, continue
+        if prior_factor is None:
+            continue
+        Trobot_prior = prior_factor.T()
+        # add_prior_factor, aruco transform i, aruco_id
+        nodeloc.graphslam.add_prior_factor(Trobot_prior, i, 'MAPSM')
+        nodeloc.last_processed_index['MAPSM'] = i + 1
 
-        # get the closest pose on the map.
-        map_posej, time_map = nodeloc.map.get_closest_pose(timestamp=T0i.pos(), delta_threshold_s=1.0)
-        if map_posej is None:
-            return
-
+    #
+    # #     odoj, _ = nodeloc.odom_buffer.interpolated_pose_at_time(time_graph2)
+    #
+    #     # retrieve the closest pointcloud in the buffer associated to time_i
+    #     current_pcd = nodeloc.pcdbuffer.get_closest_to_time(timestamp=time_i, delta_threshold_s=1.0)
+    #
+    #     # get the closest pose on the map.
+    #     map_posej, time_map = nodeloc.map.get_closest_pose(timestamp=T0i.pos(), delta_threshold_s=1.0)
+    #     if map_posej is None:
+    #         return
+    #
 
         # compute the initial relative transformation.
 

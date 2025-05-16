@@ -100,7 +100,7 @@ class PosesBuffer():
         print('Time Odo time differences times: ', d1, d2)
         if (d1 > delta_threshold_s) and (d2 > delta_threshold_s):
             print('get_index_closest_to_time could not find any close time')
-            return None, None
+            return None
         if d1 <= d2:
             return idx1 #, t1
         else:
@@ -117,7 +117,7 @@ class PosesBuffer():
         print('Time Odo time differences times: ', d1, d2)
         if (d1 > delta_threshold_s) and (d2 > delta_threshold_s):
             print('get_index_closest_to_time could not find any close time')
-            return None, None
+            return None
         if d1 <= d2:
             return self.poses[idx1]  # , t1
         else:
@@ -155,7 +155,9 @@ class PosesBuffer():
         idx1, t1, idx2, t2 = self.find_closest_times_around_t_bisect(timestamp)
         if idx1 is None:
             return None, None
-        print('Time distances: ', (timestamp-t1), (t2-timestamp))
+        # print('Time distances: ', (timestamp-t1), (t2-timestamp))
+        dt1 = (timestamp-t1)
+        dt2 = (t2-timestamp)
         if ((timestamp - t1) > delta_threshold_s) or ((t2-timestamp) > delta_threshold_s):
             print('interpolated_pose_at_time trying to interpolate with time difference greater than threshold')
             return None, None
@@ -165,7 +167,7 @@ class PosesBuffer():
             odo2 = self.poses[idx2]
             odointerp = self.interpolate_pose(odo1, t1, odo2, t2, timestamp)
             return odointerp, t1
-        return None
+        return None, None
 
     def find_closest_times_around_t_bisect(self, t):
         if len(self.times) < 2:

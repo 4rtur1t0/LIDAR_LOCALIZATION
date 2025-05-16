@@ -30,6 +30,11 @@ fig, ax = plt.subplots(figsize=(6, 4))
 canvas = FigureCanvas(fig)
 
 POINTCLOUD_TOPIC = '/ouster/points_low_rate'
+# WE ARE PUBLISHING THE PRIOR ESTIMATION HERE, as a result of the localization in the map
+MAP_SM_GLOBAL_POSE_TOPIC = '/map_sm_global_pose'
+
+# INITIAL ESTIMATION POSE, this is the output of the run_graph_localizer algorithm
+INITIAL_ESTIMATED_POSE = '/localized_pose'
 
 class GlobalScanMatchingROSNode:
     def __init__(self):
@@ -37,11 +42,11 @@ class GlobalScanMatchingROSNode:
         # the lidar buffer
         self.pcdbuffer = LidarBuffer(maxlen=5)
         self.times_lidar = []
+        # store odometry in deque fashion
+        self.initial_poses_buffer = PosesBuffer(maxlen=5000)
+        # this stores the indices in graphslam
+        self.initial_poses_indices = []
 
-        self.last_processed_index = {'ODOSM': 0,
-                                       'ODO': 0,
-                                       'GPS': 0,
-                                       'ARUCO': 0}
         # LOAD THE MAP
         print('Loading MAP')
         directory = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
@@ -59,12 +64,13 @@ class GlobalScanMatchingROSNode:
 
         # Subscriptions
         rospy.Subscriber(POINTCLOUD_TOPIC, PointCloud2, self.pc_callback)
+        rospy.Subscriber(INITIAL_ESTIMATED_POSE, Odometry, self.initial_pose_callback)
 
         # Set up a timer to periodically update the graph
         rospy.Timer(rospy.Duration(1), self.compute_global_scanmatching)
         rospy.Timer(rospy.Duration(1), self.plot_timer_callback)
         # Publisher
-        self.pub = rospy.Publisher('/localized_pose', Odometry, queue_size=10)
+        self.pub = rospy.Publisher(MAP_SM_GLOBAL_POSE_TOPIC, Odometry, queue_size=10)
 
         self.prior_estimations = []
         self.processed_map_poses = []
@@ -87,6 +93,16 @@ class GlobalScanMatchingROSNode:
         self.pcdbuffer.append(pcd=pcd, time=timestamp)
         print(30 * '+')
         return
+
+    def initial_pose_callback(self, msg):
+        """
+            Store the last estimations on the robot path
+        """
+        timestamp = msg.header.stamp.to_sec()
+        pose = Pose()
+        pose.from_message(msg.pose.pose)
+        self.initial_poses_buffer.append(pose, timestamp)
+        self.initial_poses_indices.append(int(msg.header.frame_id))
 
 
     def compute_global_scanmatching(self, event):
