@@ -57,8 +57,9 @@ class LocalizationROSNode:
         # store scanmatcher odometry in deque fashion
         self.odom_sm_buffer = PosesBuffer(maxlen=5000)
 
-        # store scanmatcher odometry in deque fashion
+        # store the priors received from the scanmatching localization node in deque fashion
         self.map_sm_prior_buffer = PosesBuffer(maxlen=5000)
+        self.map_sm_prior_buffer_index = deque(maxlen=5000)
 
         # store gps readings (in utm)
         self.gps_buffer = GPSBuffer(maxlen=5000)
@@ -80,7 +81,8 @@ class LocalizationROSNode:
                                      'ODO': 0,
                                      'GPS': 0,
                                      'ARUCO': 0,
-                                     'MAPSM': 0}
+                                     'MAPSM': 0,
+                                     'LAST_PUBLISHED_INDEX': 0}
         # LOAD THE MAP
         directory = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
         self.map = Map()
@@ -93,13 +95,6 @@ class LocalizationROSNode:
         rospy.init_node('localization_node')
         print('Subscribing to PCD, GNSS')
         print('WAITING FOR MESSAGES!')
-
-
-        # # ROS STUFFF
-        # print('Initializing localization node!')
-        # rospy.init_node('localization_node')
-        # print('Subscribing to ODOMETRY, GNSS')
-        # print('WAITING FOR MESSAGES!')
 
         # Subscriptions
         rospy.Subscriber('/husky_velocity_controller/odom', Odometry, self.odom_callback)
@@ -158,6 +153,7 @@ class LocalizationROSNode:
     def map_sm_global_pose_callback(self, msg):
         """
             Store the estimations based on the map scanmatching node.
+            Also store the frame_id, which corresponds to the actual index in the graph
         """
         timestamp = msg.header.stamp.to_sec()
         # if self.start_time is None:
@@ -166,6 +162,7 @@ class LocalizationROSNode:
         pose = Pose()
         pose.from_message(msg.pose.pose)
         self.map_sm_prior_buffer.append(pose, timestamp)
+        self.map_sm_prior_buffer_index.append(msg.header.frame_id)
 
     def gps_callback(self, msg):
         """
@@ -208,6 +205,9 @@ class LocalizationROSNode:
         update_sm_observations(self)
         # update_odo_observations(self)
         update_gps_observations(self)
+        # add the prior observations with respect to the map. I.e. the localization found in the other node:
+        # scanmatcher_to_map
+
         update_prior_map_observations(self)
         # update_aruco_observations(self)
 
@@ -231,21 +231,34 @@ class LocalizationROSNode:
             self.publication_delay_times.append(last_odometry_time-last_solution_time)
 
         # actually publish the solution at the current time
-        if len(self.graphslam_times):
-            last_index = len(self.graphslam_times)
-            T = self.graphslam.get_solution_index(last_index-1)
-            self.publish_pose(T)
+        # if len(self.graphslam_times):
+        #     last_index = len(self.graphslam_times)
+        #     T = self.graphslam.get_solution_index(last_index-1)
+        self.publish_graph()
 
-
-    def publish_pose(self, T):
-        if T is None:
+    def publish_graph(self):
+        """
+        Publish all the poses until now
+        """
+        if len(self.graphslam_times) == 0:
+            print("\033[91mpublish_graph. No nodes in graph yet. Nothing to publish yet.\033[0m")
             return
+        last_index = self.last_processed_index['LAST_PUBLISHED_INDEX']
+        for i in range(last_index, len(self.graphslam_times)):
+            T = self.graphslam.get_solution_index(i)
+            timestamp = self.graphslam_times[i]
+            self.publish_pose(T=T, timestamp=timestamp, index_in_graph=i)
+            self.last_processed_index['LAST_PUBLISHED_INDEX'] = i+1
+
+    def publish_pose(self, T, timestamp, index_in_graph):
         print('Publishing last pose:')
         position = T.pos()# print(pose)
         orientation = T.Q()
         msg = Odometry()
-        msg.header.stamp = rospy.Time.now()
-        msg.header.frame_id = "map"
+        msg.header.stamp = rospy.Time.from_sec(timestamp) #rospy.Time.now()
+        # caution: the frame_id stores the index in the graph, so that the graph localizer in map can
+        # also find a localization in the map and return.
+        msg.header.frame_id = str(index_in_graph) #"map"
         msg.pose.pose.position.x = position[0]
         msg.pose.pose.position.y = position[1]
         msg.pose.pose.position.z = position[2]

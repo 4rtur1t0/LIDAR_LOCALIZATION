@@ -3,6 +3,12 @@ Using GTSAM in a GraphSLAM context.
 We are integrating odometry, scanmatching odometry and (if present) GPS.
     The state X is the position and orientation frame of the robot, placed on the GPS sensor.
 
+
+    This node subscribes to the localized_pose topic.
+    The localized_pose topic is initially published by the localization node.
+    The initial pose is used to find a number of close pointclouds in the map. A registration is then performed
+    As a result, we end up having another prior3Dfactor observation on the state X(i)
+
 """
 from collections import deque
 import rospy
@@ -29,23 +35,27 @@ from tools.gpsconversions import gps2utm
 fig, ax = plt.subplots(figsize=(6, 4))
 canvas = FigureCanvas(fig)
 
+# CAUTION: this topic must be subscribed to the /ouster/points (high rate) topic
 POINTCLOUD_TOPIC = '/ouster/points_low_rate'
+# POINTCLOUD_TOPIC = '/ouster/points'
+
 # WE ARE PUBLISHING THE PRIOR ESTIMATION HERE, as a result of the localization in the map
 MAP_SM_GLOBAL_POSE_TOPIC = '/map_sm_global_pose'
 
 # INITIAL ESTIMATION POSE, this is the output of the run_graph_localizer algorithm
 INITIAL_ESTIMATED_POSE = '/localized_pose'
 
+
 class GlobalScanMatchingROSNode:
     def __init__(self):
         self.start_time = None
         # the lidar buffer
-        self.pcdbuffer = LidarBuffer(maxlen=5)
+        self.pcdbuffer = LidarBuffer(maxlen=500)
         self.times_lidar = []
         # store odometry in deque fashion
-        self.initial_poses_buffer = PosesBuffer(maxlen=5000)
+        self.initial_estimation_poses_buffer = PosesBuffer(maxlen=5000)
         # this stores the indices in graphslam
-        self.initial_poses_indices = []
+        self.initial_estimation_poses_buffer_indices = []
 
         # LOAD THE MAP
         print('Loading MAP')
@@ -62,23 +72,26 @@ class GlobalScanMatchingROSNode:
         print('Subscribing to PCD, GNSS')
         print('WAITING FOR MESSAGES!')
 
-        # Subscriptions
+        # Subscriptions to the pointcloud topic and to the
+        # current localized pose
         rospy.Subscriber(POINTCLOUD_TOPIC, PointCloud2, self.pc_callback)
-        rospy.Subscriber(INITIAL_ESTIMATED_POSE, Odometry, self.initial_pose_callback)
+        rospy.Subscriber(INITIAL_ESTIMATED_POSE, Odometry, self.initial_pose_estimation_callback)
 
         # Set up a timer to periodically update the graph
-        rospy.Timer(rospy.Duration(1), self.compute_global_scanmatching)
+        rospy.Timer(rospy.Duration(5), self.compute_global_scanmatching)
         rospy.Timer(rospy.Duration(1), self.plot_timer_callback)
         # Publisher
         self.pub = rospy.Publisher(MAP_SM_GLOBAL_POSE_TOPIC, Odometry, queue_size=10)
 
-        self.prior_estimations = []
-        self.processed_map_poses = []
+        # print info.
+        self.all_initial_estimations = [] # initial without map
+        self.all_refined_estimations = [] # compared to map
+        # self.prior_estimations = []
+        # self.processed_map_poses = []
 
     def pc_callback(self, msg):
         """
         Get last pcd reading and append to buffer.
-
         """
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
@@ -94,16 +107,18 @@ class GlobalScanMatchingROSNode:
         print(30 * '+')
         return
 
-    def initial_pose_callback(self, msg):
+    def initial_pose_estimation_callback(self, msg):
         """
             Store the last estimations on the robot path
+            This should be the /localized_pose topic, which maintains
+            the last localization with all the information, excluding
+            the localization with respec to the map.
         """
         timestamp = msg.header.stamp.to_sec()
         pose = Pose()
         pose.from_message(msg.pose.pose)
-        self.initial_poses_buffer.append(pose, timestamp)
-        self.initial_poses_indices.append(int(msg.header.frame_id))
-
+        self.initial_estimation_poses_buffer.append(pose, timestamp)
+        self.initial_estimation_poses_buffer_indices.append(int(msg.header.frame_id))
 
     def compute_global_scanmatching(self, event):
         """
@@ -118,75 +133,146 @@ class GlobalScanMatchingROSNode:
             - look for last the current estimation of the pose.
             - look for nearby poses in the map.
             - compute initial estimation.
+
+            # get the state X(i), call it T0i (obtain the closest pcd in time)
+            # get the closest pointcloud L(j), call it T0j. Here we use the closest L(j) in Euclidean
+            # compute an initial estimation Tij. # it must be: T0i*Tij = T0j --> thus Tij = T0i.inv()*T0j
+            # given the initial transformation Tij, compute Tij_ using ICP
+            # it must be: T0i_*Tij_ = T0j --> thus T0i_ = T0j*Tij_.inv(), This last T0i_ is then published and
+            # must be added as a prior
         """
-        # max_proc = 2
-        # for i in range(max_proc):
-        i = 0
         if len(self.pcdbuffer) == 0:
+            print("\033[91mCaution!!! No PCD received yet.\033[0m")
             return
-        current_pcd = self.pcdbuffer[i]
-        current_pcd_time = self.pcdbuffer.times[i]
-
-        current_pcd_time = current_pcd_time + 0.5
-
-        # current_time = rospy.Time.now().to_sec()
-        # diff = current_time-current_pcd_time
-        # current test approach: find a map pose closest in time
-        # needed approach: get pointclouds in the map closest in euclidean distance
-        map_pose, time_map = self.map.get_pose_closest_to_time(timestamp=current_pcd_time, delta_threshold_s=1.0)
-        if map_pose is None:
+        if len(self.initial_estimation_poses_buffer) == 0:
+            print("\033[91mCaution!!! No initial /localized_pose received yet.\033[0m")
             return
-            # continue
-        # get the closest pcd in the map
-        map_pcd, pointcloud_time = self.map.get_pcd_closest_to_time(timestamp=current_pcd_time, delta_threshold_s=1.0)
-        diff = current_pcd_time-pointcloud_time
-        print('Diff in time: current pcd and map pcd: ', diff)
+        n = 0
+        # publish_prior_estimations = []
+        # for each existing state k
+        for k in range(len(self.initial_estimation_poses_buffer)):
+            #############################################################
+            # get the initial prior estate X(i)
+            # caution, here, the current index is also stored. The index corresponds to the index in the
+            # graph
+            ############################################################
+            posei = self.initial_estimation_poses_buffer[k]
+            # caution: this stores the indices received, which correspond to
+            # the indices in the graph
+            index_i = self.initial_estimation_poses_buffer_indices[k]
+            timestampi = self.initial_estimation_poses_buffer.times[k]
+            T0i = posei.T()
+            pcdi, timestamp_pcd = self.pcdbuffer.get_closest_to_time(timestamp=timestampi, delta_threshold_s=1.0)
+            if pcdi is None:
+                continue
+            ############################################################
+            # get the closest pointcloud in map within 3 meters
+            # get the closest pcd in the map: in terms of distnace
+            ############################################################
+            posej, pcdj = self.map.get_closest_pose_pcd(posei, delta_threshold_m=3.0)
+            if posej is None:
+                continue
+            T0j = posej.T()
+            # compute initial transformation
+            Tij_0 = T0i.inv()*T0j
+            ############################################################
+            # refine transformation using ICP registration.
+            ############################################################
+            pcdi.down_sample(voxel_size=None)
+            pcdi.filter_points()
+            pcdi.estimate_normals()
+            # pcdi.draw_cloud()
+            # current the map pcd
+            pcdj.load_pointcloud()
+            pcdj.down_sample(voxel_size=None)
+            pcdj.filter_points()
+            pcdj.estimate_normals()
+            # pcdj.draw_cloud()
+            # compute the refined relative transformation to the map
+            Tij_ = self.scanmatcher.registration(pcdi, pcdj, Tij_0=Tij_0, show=True)
+            # compute the new estimation on i, which will be published as a prior
+            T0i_ = T0j * Tij_.inv()
+            ############################################################
+            # store the prior for later publishment
+            # publish_prior_estimations.append((T0i_, index_i))
+            # publish here!
+            ############################################################
+            self.publish_prior_information_pose(T=T0i_,
+                                                index_in_graph=index_i)
+            n += 1
+            # store for printing
+            self.all_initial_estimations.append(T0i)
+            self.all_refined_estimations.append(T0i_)
 
-        # process the current pcd
-        current_pcd.down_sample(voxel_size=None)
-        current_pcd.filter_points()
-        current_pcd.estimate_normals()
-        # current_pcd.draw_cloud()
+        # finally, remove the processed poses from the buffer
+        # to avoid repeated computation
+        for k in range(n):
+            self.initial_estimation_poses_buffer.popleft()
+            self.initial_estimation_poses_buffer_indices.pop()
 
-        # current the map pcd
-        map_pcd.load_pointcloud()
-        map_pcd.down_sample(voxel_size=None)
-        map_pcd.filter_points()
-        map_pcd.estimate_normals()
-        # map_pcd.draw_cloud()
-        # now, in this, test, consider that the initial transformation is the identity
-        # In the final approach: consider that the relative initial transformation is known
-        # Tij0 = HomogeneousMatrix(Vector([0.1, 0.1, 0]), Euler([0.1, 0.1, 0.1]))
-        Tij0 = HomogeneousMatrix()
-        Tij = self.scanmatcher.registration(current_pcd, map_pcd, Tij_0=Tij0, show=False)
+        #
+        #     current_pcd = self.pcdbuffer.[i]
+        # # current_pcd_time = self.pcdbuffer.times[i]
+        #
+        # current_pcd_time = current_pcd_time + 0.5
+        #
+        # # current_time = rospy.Time.now().to_sec()
+        # # diff = current_time-current_pcd_time
+        # # current test approach: find a map pose closest in time
+        # # needed approach: get pointclouds in the map closest in euclidean distance
+        # map_pose, time_map = self.map.get_pose_closest_to_time(timestamp=current_pcd_time, delta_threshold_s=1.0)
+        # if map_pose is None:
+        #     return
+        #     # continue
+        # # get the closest pcd in the map
+        # map_pcd, pointcloud_time = self.map.get_pcd_closest_to_time(timestamp=current_pcd_time, delta_threshold_s=1.0)
+        # diff = current_pcd_time-pointcloud_time
+        # print('Diff in time: current pcd and map pcd: ', diff)
+        #
+        # # process the current pcd
+        # current_pcd.down_sample(voxel_size=None)
+        # current_pcd.filter_points()
+        # current_pcd.estimate_normals()
+        # # current_pcd.draw_cloud()
+        #
+        # # current the map pcd
+        # map_pcd.load_pointcloud()
+        # map_pcd.down_sample(voxel_size=None)
+        # map_pcd.filter_points()
+        # map_pcd.estimate_normals()
+        # # map_pcd.draw_cloud()
+        # # now, in this, test, consider that the initial transformation is the identity
+        # # In the final approach: consider that the relative initial transformation is known
+        # # Tij0 = HomogeneousMatrix(Vector([0.1, 0.1, 0]), Euler([0.1, 0.1, 0.1]))
+        # Tij0 = HomogeneousMatrix()
+        # Tij = self.scanmatcher.registration(current_pcd, map_pcd, Tij_0=Tij0, show=False)
+        #
+        # map_pcd.unload_pointcloud()
+        # # the map pose (pointcloud)
+        # T0j = map_pose.T()
+        # # estimate the initial i
+        # T0i = T0j*Tij.inv()
+        # self.prior_estimations.append(T0i)
+        # self.processed_map_poses.append(map_pose.T())
+        # # remove pcd from the list
+        # # self.pcdbuffer.popleft()
 
-        map_pcd.unload_pointcloud()
-        # the map pose (pointcloud)
-        T0j = map_pose.T()
-        # estimate the initial i
-        T0i = T0j*Tij.inv()
-        self.prior_estimations.append(T0i)
-        self.processed_map_poses.append(map_pose.T())
-        # remove pcd from the list
-        # self.pcdbuffer.popleft()
 
-
-    def publish_prior_information_pose(self, T):
+    def publish_prior_information_pose(self, T, index_in_graph):
         """
         Publish the estimation found on any pose close to the published time.
         """
         if T is None:
             return
         print('Publishing last pose:')
-        position = T.pos()# print(pose)
+        position = T.pos()
         orientation = T.Q()
         msg = Odometry()
         msg.header.stamp = rospy.Time.now()
-        msg.header.frame_id = "map"
+        msg.header.frame_id = str(index_in_graph) #"map"
         msg.pose.pose.position.x = position[0]
         msg.pose.pose.position.y = position[1]
         msg.pose.pose.position.z = position[2]
-        # q = pose.rotation().toQuaternion()
         msg.pose.pose.orientation.x = orientation.qx
         msg.pose.pose.orientation.y = orientation.qy
         msg.pose.pose.orientation.z = orientation.qz
@@ -195,23 +281,23 @@ class GlobalScanMatchingROSNode:
 
     def plot_timer_callback(self, event):
         print('Plotting info')
-        prior_estimations = []
-        processed_map_poses = []
-        for T0i in self.prior_estimations:
-            prior_estimations.append(T0i.pos())
-        prior_estimations = np.array(prior_estimations)
+        all_initial_estimations = []
+        all_refined_estimations = []
+        for T0i in self.all_initial_estimations:
+            all_initial_estimations.append(T0i.pos())
+        all_initial_estimations = np.array(all_initial_estimations)
 
-        for T0j in self.processed_map_poses:
-            processed_map_poses.append(T0j.pos())
-        processed_map_poses = np.array(processed_map_poses)
+        for T0j in self.all_refined_estimations:
+            all_refined_estimations.append(T0j.pos())
+        all_refined_estimations = np.array(all_refined_estimations)
 
         ax.clear()
-        if len(prior_estimations) > 0:
-            ax.scatter(prior_estimations[:, 0], prior_estimations[:, 1], marker='.', color='blue')
+        if len(all_initial_estimations) > 0:
+            ax.scatter(all_initial_estimations[:, 0], all_initial_estimations[:, 1], marker='.', color='blue')
 
-        if len(processed_map_poses) > 0:
-            ax.scatter(processed_map_poses[:, 0],
-                       processed_map_poses[:, 1], marker='.', color='red')
+        if len(all_refined_estimations) > 0:
+            ax.scatter(all_refined_estimations[:, 0],
+                       all_refined_estimations[:, 1], marker='.', color='red')
 
         canvas.print_figure('plot.png', bbox_inches='tight', dpi=300)
 

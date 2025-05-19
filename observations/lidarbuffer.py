@@ -97,7 +97,7 @@ class LidarBuffer:
             print(f"Element {timestamp} found at index {index}")
             return self.pointclouds[index], self.times[index]
         else:
-            return None
+            return None, None
 
     # def unload_pointcloud(self, i):
     #     self.pointclouds[i].unload_pointcloud()

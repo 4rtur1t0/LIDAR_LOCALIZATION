@@ -172,21 +172,37 @@ def update_prior_map_observations(nodeloc):
         print("\033[91mCaution!!! No graph yet.\033[0m")
         return
 
-    first_index_in_graphslam = nodeloc.last_processed_index['MAPSM']
-    # running through the nodes of the graph (non visited yet). Looking for relative scanmatching to the map
-    for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times)):
-        # Get the solution i on the graph
-        # T0i = nodeloc.graphslam.get_solution_index(i)
-        time_i = nodeloc.graphslam_times[i]
-        # try to estimate a prior factor from two consecutive prior factors (i. e. estimations on the true trajectory)
-        prior_factor, _ = nodeloc.prior_global_buffer.interpolated_pose_at_time(time_i, delta_threshold_s=2)
-        # if theres no prior estimation based on the map, continue
-        if prior_factor is None:
-            continue
-        Trobot_prior = prior_factor.T()
+    # loop through the received prior estimations.
+    # add them to the graph
+    # remove them from the buffer
+    k = 0
+    for i in range(len(nodeloc.map_sm_prior_buffer)):
+        prior_i = nodeloc.map_sm_prior_buffer[i]
+        index_graph_i = nodeloc.mmap_sm_prior_buffer_index[i]
+        Trobot_prior = prior_i.T()
         # add_prior_factor, aruco transform i, aruco_id
-        nodeloc.graphslam.add_prior_factor(Trobot_prior, i, 'MAPSM')
-        nodeloc.last_processed_index['MAPSM'] = i + 1
+        nodeloc.graphslam.add_prior_factor(Trobot_prior, index_graph_i, 'MAPSM')
+        k += 1
+
+    for i in range(k):
+        nodeloc.map_sm_prior_buffer.popleft()
+        nodeloc.mmap_sm_prior_buffer_index.pop()
+
+    # first_index_in_graphslam = nodeloc.last_processed_index['MAPSM']
+    # # running through the nodes of the graph (non visited yet). Looking for relative scanmatching to the map
+    # for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times)):
+    #     # Get the solution i on the graph
+    #     # T0i = nodeloc.graphslam.get_solution_index(i)
+    #     time_i = nodeloc.graphslam_times[i]
+    #     # try to estimate a prior factor from two consecutive prior factors (i. e. estimations on the true trajectory)
+    #     prior_factor, _ = nodeloc.prior_global_buffer.interpolated_pose_at_time(time_i, delta_threshold_s=2)
+    #     # if theres no prior estimation based on the map, continue
+    #     if prior_factor is None:
+    #         continue
+    #     Trobot_prior = prior_factor.T()
+    #     # add_prior_factor, aruco transform i, aruco_id
+    #     nodeloc.graphslam.add_prior_factor(Trobot_prior, i, 'MAPSM')
+    #     nodeloc.last_processed_index['MAPSM'] = i + 1
 
     #
     # #     odoj, _ = nodeloc.odom_buffer.interpolated_pose_at_time(time_graph2)

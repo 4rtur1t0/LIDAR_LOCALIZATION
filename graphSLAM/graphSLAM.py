@@ -47,6 +47,13 @@ SM_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([icp_rpy_sigma*np.pi/180,
                                                             icp_xyz_sigma,
                                                             icp_xyz_sigma,
                                                             icp_xyz_sigma]))
+# the noise is twice as big
+MAPSM_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([3*icp_rpy_sigma*np.pi/180,
+                                                            3*icp_rpy_sigma*np.pi/180,
+                                                            3*icp_rpy_sigma*np.pi/180,
+                                                            3*icp_xyz_sigma,
+                                                            3*icp_xyz_sigma,
+                                                            3*icp_xyz_sigma]))
 
 ODO_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([odo_rpy_sigma*np.pi/180,
                                                             odo_rpy_sigma*np.pi/180,
@@ -77,6 +84,7 @@ class GraphSLAM():
         # noises
         self.PRIOR_NOISE = PRIOR_NOISE
         self.SM_NOISE = SM_NOISE
+        self.MAPSM_NOISE = MAPSM_NOISE
         self.ODO_NOISE = ODO_NOISE
         self.GPS_NOISE = gtsam.noiseModel.Diagonal.Sigmas(GPS_NOISE)
         # landmarks
@@ -93,9 +101,9 @@ class GraphSLAM():
         # init graph starting at 0 and with initial pose T0 = eye
         self.graph.push_back(gtsam.PriorFactorPose3(X(0), gtsam.Pose3(T.array), self.PRIOR_NOISE))
         # CAUTION: the initial T0 transform is the identity.
-        self.initial_estimate.insert(X(0), gtsam.Pose3())
+        self.initial_estimate.insert(X(0), gtsam.Pose3(T.array))
         # self.current_estimate = self.initial_estimate
-        self.current_estimate.insert(X(0), gtsam.Pose3())
+        self.current_estimate.insert(X(0), gtsam.Pose3(T.array))
 
     def add_initial_estimate(self, atb, k):
         next_estimate = self.current_estimate.atPose3(X(k-1)).compose(gtsam.Pose3(atb.array))
@@ -140,23 +148,16 @@ class GraphSLAM():
             gpsnoise = gtsam.noiseModel.Diagonal.Sigmas(sigmas=gpsnoise)
             self.graph.add(gtsam.GPSFactor(X(i), utm, gpsnoise))
 
-    def add_prior_factor(self, T_prior_x_i, i):
+    def add_prior_factor(self, T_prior_x_i, i, noise_type):
         """
-        Estimating a prior factor on X(i), given the aruco_id and the transformation
-        T camera-aruco (atb).
+        Estimating a prior factor on X(i), given the received estimation from other source.
+        The main source here is the estimation of the prior with respect to the map, given
+        the scanmatcher_map node.
         """
-        # T_aruco = self.MapAruco.get_transform(aruco_id)
-        # noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([5 * np.pi / 180,
-        #                                                    5 * np.pi / 180,
-        #                                                    5 * np.pi / 180,
-        #                                                    1,
-        #                                                    1,
-        #                                                    1]))
-        # Ta_c = atb.inv()
-        # T_prior_x_i = T_aruco*Ta_c*self.Tlidar_cam.inv()
+        noise = self.select_noise(noise_type)
         Tprior = gtsam.Pose3(T_prior_x_i.array)
         # add prior factor
-        self.graph.push_back(gtsam.PriorFactorPose3(X(i), Tprior, ARUCO_NOISE))
+        self.graph.push_back(gtsam.PriorFactorPose3(X(i), Tprior, noise))
 
 
     def optimize(self):
@@ -175,6 +176,8 @@ class GraphSLAM():
             return self.ODO_NOISE
         elif noise_type == 'SM':
             return self.SM_NOISE
+        elif noise_type == 'MAPSM':
+            return self.MAPSM_NOISE
         elif noise_type == 'GPS':
             return self.GPS_NOISE
 
