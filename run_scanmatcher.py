@@ -103,23 +103,24 @@ class ScanmatchingNode:
         if self.start_time is None:
             self.start_time = timestamp
         self.times_lidar.append(timestamp)
+
         print('Received pointcloud')
-        # CAUTION!!! for some reason, the pointclouds and the odometry come at different times
-        # IN PARTICULAR, ODOMETRY COMES LATER IN TIME.
-        # wait 0.1 s to allow odometry buffer to fill up (approximately)
-        delay = PARAMETERS.config.get('scanmatcher').get('initial_transform').get('delay_seconds_lidar_odometry')
-        rospy.sleep(delay)
         # add first pointcloud in this particular case:  only try to get the first pointcloud
         # if we have at least one odometry meeasurement and no initial pcd has been included
         # in order to find a proper initial Tij_0
         if (len(self.pcdbuffer.times) == 0) and (len(self.odombuffer.times) > 0):
             print(30*'+')
             print('add_first_pcd')
+            # CAUTION!!! for some reason, the pointclouds and the odometry come at different times
+            # IN PARTICULAR, ODOMETRY COMES LATER IN TIME.
+            # wait 0.1 s to allow odometry buffer to fill up (approximately)
+            delay = PARAMETERS.config.get('scanmatcher').get('initial_transform').get('delay_seconds_lidar_odometry')
+            rospy.sleep(delay)
             self.add_first_pcd(timestamp=timestamp, msg=msg)
             return
         delta_threshold_s = PARAMETERS.config.get('scanmatcher').get('initial_transform').get('delta_threshold_s')
         odo_ti = self.pcdbuffer[-1].pose
-        odo_tj = self.odombuffer.interpolated_pose_at_time(timestamp=timestamp, delta_threshold_s=delta_threshold_s)
+        odo_tj, _ = self.odombuffer.interpolated_pose_at_time(timestamp=timestamp, delta_threshold_s=delta_threshold_s)
         if odo_tj is None:
             print('ERROR: !NO VALID ODOMETRY FOUND AT TIMESTAMP: ')
             print(1000*'!')
@@ -278,15 +279,15 @@ class ScanmatchingNode:
         odo_t0 = None
         try:
             print('Getting interp odo. Two odometry measurements exist.')
-            odo_t0 = self.odombuffer.interpolated_pose_at_time(timestamp=timestamp,
-                                                               delta_threshold_s=2*delta_threshold_s)
+            odo_t0, _ = self.odombuffer.interpolated_pose_at_time(timestamp=timestamp,
+                                                                delta_threshold_s=2*delta_threshold_s)
         except:
             pass
         # in any case, try to get the closest pose
         if odo_t0 is None:
             try:
                 print('Getting closets odo. Only one odometry measurement exists.')
-                odo_t0 = self.odombuffer.closest_pose_at_time(timestamp=timestamp,
+                odo_t0, _ = self.odombuffer.get_closest_pose_at_time(timestamp=timestamp,
                                                               delta_threshold_s=2*delta_threshold_s)
             except:
                  pass

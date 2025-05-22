@@ -109,6 +109,7 @@ class Map():
         return None
 
 
+
     # def localize_with_aruco(self, Tca, aruco_id, **kwargs):
     #     """
     #     Performs an initial localization step

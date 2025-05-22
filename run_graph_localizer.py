@@ -15,7 +15,6 @@ from nav_msgs.msg import Odometry
 from observations.gpsbuffer import GPSBuffer, GPSPosition
 from observations.lidarbuffer import LidarBuffer
 from observations.posesbuffer import PosesBuffer, Pose
-from scanmatcher.scanmatcher import ScanMatcher
 from sensor_msgs.msg import NavSatFix
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
 import matplotlib.pyplot as plt
@@ -24,18 +23,19 @@ from graphSLAM.graphSLAM import GraphSLAM
 from artelib.homogeneousmatrix import HomogeneousMatrix
 from artelib.vector import Vector
 from artelib.euler import Euler
-# from config import PARAMETERS
-# from tools.gpsconversions import gps2utm
 import time
 
-fig1, ax1 = plt.subplots(figsize=(6, 4))
-ax1.set_title('MAP')
+fig1, ax1 = plt.subplots(figsize=(12, 8))
+ax1.set_title('MAP/poses')
 canvas1 = FigureCanvas(fig1)
 
 fig2, ax2 = plt.subplots(figsize=(6, 4))
 ax2.set_title('UPDATE/OPTIMIZATION time blue (s), publication time-difference (s)')
 canvas2 = FigureCanvas(fig2)
 
+fig3, ax3 = plt.subplots(figsize=(6, 4))
+ax3.set_title('OBSERVATIONS INDICES IN GRAPH')
+canvas3 = FigureCanvas(fig3)
 
 
 class LocalizationROSNode:
@@ -73,22 +73,31 @@ class LocalizationROSNode:
         self.skip_optimization = 5
         self.current_key = 0
         self.optimization_index = 1
-        # gparhslam times. Each node in the graph has an associated time
+        # graphslam times. Each node in the graph has an associated time, stored in this list
         self.graphslam_times = []
+        # the initial time of the experiment
         self.start_time = None
         self.last_odom_pose = None
+        # Stores the last processed index in the graph for each different observation
         self.last_processed_index = {'ODOSM': 0,
                                      'ODO': 0,
                                      'GPS': 0,
                                      'ARUCO': 0,
                                      'MAPSM': 0,
                                      'LAST_PUBLISHED_INDEX': 0}
+        # Stores the indices that have been touched (put in relation)
+        # for example, an ODO observation between indices (1, 2) in the graph
+        self.graphslam_observations_indices = {'ODOSM': [],
+                                               'ODO': [],
+                                               'GPS': [],
+                                               'ARUCO': [],
+                                               'MAPSM': []}
         # LOAD THE MAP
         directory = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
         self.map = Map()
         self.map.read_data(directory=directory)
         # the scanmatching object
-        self.scanmatcher = ScanMatcher()
+        # self.scanmatcher = ScanMatcher()
 
         # ROS STUFFF
         print('Initializing global scanmatching node!')
@@ -156,9 +165,9 @@ class LocalizationROSNode:
             Also store the frame_id, which corresponds to the actual index in the graph
         """
         timestamp = msg.header.stamp.to_sec()
-        # if self.start_time is None:
-        #     self.start_time = timestamp
-        #     self.graphslam_times = np.array([timestamp])
+        if self.start_time is None:
+            self.start_time = timestamp
+            self.graphslam_times = np.array([timestamp])
         pose = Pose()
         pose.from_message(msg.pose.pose)
         self.map_sm_prior_buffer.append(pose, timestamp)
@@ -203,6 +212,7 @@ class LocalizationROSNode:
         start_time = time.time()
         print('UPDATE OBSERVATIONS!! SM, ODO, GPS')
         update_sm_observations(self)
+        # caution, called from the callback at each odometry
         # update_odo_observations(self)
         update_gps_observations(self)
         # add the prior observations with respect to the map. I.e. the localization found in the other node:
@@ -273,15 +283,27 @@ class LocalizationROSNode:
         print('Plotting info')
         positions = self.graphslam.get_solution_positions()
         utmpositions = self.gps_buffer.get_utm_positions()
+        map_sm_prior_positions = self.map_sm_prior_buffer.get_positions()
+        # plot the groundtruth of the map
+        map_robot_path_positions = self.map.robotpath.get_positions()
+        map_robot_path_positions = map_robot_path_positions[0:500, :]
         # plot posittions
         ax1.clear()
         if len(positions) > 0:
-            ax1.scatter(positions[:, 0], positions[:, 1], marker='.', color='blue')
+            ax1.scatter(positions[:, 0], positions[:, 1], marker='.', color='blue', label='GraphSLAM solutions')
 
         if len(utmpositions) > 0:
             ax1.scatter(utmpositions[:, 0],
-                       utmpositions[:, 1], marker='.', color='red')
+                       utmpositions[:, 1], marker='.', color='red', label='UTM readings')
 
+        if len(map_sm_prior_positions) > 0:
+            ax1.scatter(map_sm_prior_positions[:, 0],
+                        map_sm_prior_positions[:, 1], marker='.', color='black', label='Map prior Scanmatching')
+
+        if len(map_robot_path_positions) > 0:
+            ax1.scatter(map_robot_path_positions[:, 0],
+                        map_robot_path_positions[:, 1], marker='.', color='green', label='Map path')
+        ax1.legend()
         canvas1.print_figure('plot1.png', bbox_inches='tight', dpi=300)
 
         # plot other info
@@ -292,9 +314,38 @@ class LocalizationROSNode:
             ax2.plot(update_graph_timer_callback_times, marker='.', color='blue')
         if len(publication_delay_times):
             ax2.plot(publication_delay_times, marker='.', color='red')
-
         canvas2.print_figure('plot2.png', bbox_inches='tight', dpi=300)
 
+        # plot the nodes in the graph
+        # nodes that have been related by observations
+        # 'ODOSM': [],
+        # 'ODO': [],
+        # 'GPS': [],
+        # 'ARUCO': [],
+        # 'MAPSM': []
+        ax3.clear()
+        if len(self.graphslam_observations_indices['ODO']):
+            indices = np.array(self.graphslam_observations_indices['ODO'])
+            ln = len(indices)
+            ax3.plot(indices, 1.0*np.ones(ln), marker='.', color='red',
+                     label='Odometry consecutive relations (only first node)')
+        if len(self.graphslam_observations_indices['ODOSM']):
+            indices = np.array(self.graphslam_observations_indices['ODOSM'])
+            ln = len(indices)
+            ax3.plot(indices, 2.0 * np.ones(ln), marker='.', color='green',
+                     label='Scanmatching odometry consecutive observations')
+        if len(self.graphslam_observations_indices['GPS']):
+            indices = np.array(self.graphslam_observations_indices['GPS'])
+            ln = len(indices)
+            ax3.plot(indices, 3.0*np.ones(ln), marker='.', color='blue',
+                     label='GPS prior observations')
+        if len(self.graphslam_observations_indices['MAPSM']):
+            indices = np.array(self.graphslam_observations_indices['MAPSM'])
+            ln = len(indices)
+            ax3.plot(indices, 4.0*np.ones(ln), marker='.', color='black',
+                     label='MAP Scanmatching prior observations')
+        ax3.legend()
+        canvas3.print_figure('plot3.png', bbox_inches='tight', dpi=300)
 
     def run(self):
         rospy.spin()

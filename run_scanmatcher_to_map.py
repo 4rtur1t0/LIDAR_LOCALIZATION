@@ -56,6 +56,8 @@ class GlobalScanMatchingROSNode:
         self.initial_estimation_poses_buffer = PosesBuffer(maxlen=5000)
         # this stores the indices in graphslam
         self.initial_estimation_poses_buffer_indices = []
+        # stores whether the pose has been processed
+        self.initial_estimation_poses_buffer_processed = []
 
         # LOAD THE MAP
         print('Loading MAP')
@@ -119,6 +121,8 @@ class GlobalScanMatchingROSNode:
         pose.from_message(msg.pose.pose)
         self.initial_estimation_poses_buffer.append(pose, timestamp)
         self.initial_estimation_poses_buffer_indices.append(int(msg.header.frame_id))
+        # yes, the current initial estimation has not been processed yet
+        self.initial_estimation_poses_buffer_processed.append(False)
 
     def compute_global_scanmatching(self, event):
         """
@@ -151,14 +155,20 @@ class GlobalScanMatchingROSNode:
         # publish_prior_estimations = []
         # for each existing state k
         for k in range(len(self.initial_estimation_poses_buffer)):
+            # if processed previously... continue
+            if self.initial_estimation_poses_buffer_processed[k]:
+                print('Skipping initial estimation k: ', k)
+                continue
+
             #############################################################
             # get the initial prior estate X(i)
             # caution, here, the current index is also stored. The index corresponds to the index in the
             # graph
             ############################################################
             posei = self.initial_estimation_poses_buffer[k]
+
             # caution: this stores the indices received, which correspond to
-            # the indices in the graph
+            # the indices in the graph: important for later publish
             index_i = self.initial_estimation_poses_buffer_indices[k]
             timestampi = self.initial_estimation_poses_buffer.times[k]
             T0i = posei.T()
@@ -189,7 +199,7 @@ class GlobalScanMatchingROSNode:
             pcdj.estimate_normals()
             # pcdj.draw_cloud()
             # compute the refined relative transformation to the map
-            Tij_ = self.scanmatcher.registration(pcdi, pcdj, Tij_0=Tij_0, show=True)
+            Tij_ = self.scanmatcher.registration(pcdi, pcdj, Tij_0=Tij_0, show=False)
             # compute the new estimation on i, which will be published as a prior
             T0i_ = T0j * Tij_.inv()
             ############################################################
@@ -199,6 +209,7 @@ class GlobalScanMatchingROSNode:
             ############################################################
             self.publish_prior_information_pose(T=T0i_,
                                                 index_in_graph=index_i)
+            self.initial_estimation_poses_buffer_processed[k] = True
             n += 1
             # store for printing
             self.all_initial_estimations.append(T0i)
@@ -206,57 +217,9 @@ class GlobalScanMatchingROSNode:
 
         # finally, remove the processed poses from the buffer
         # to avoid repeated computation
-        for k in range(n):
-            self.initial_estimation_poses_buffer.popleft()
-            self.initial_estimation_poses_buffer_indices.pop()
-
-        #
-        #     current_pcd = self.pcdbuffer.[i]
-        # # current_pcd_time = self.pcdbuffer.times[i]
-        #
-        # current_pcd_time = current_pcd_time + 0.5
-        #
-        # # current_time = rospy.Time.now().to_sec()
-        # # diff = current_time-current_pcd_time
-        # # current test approach: find a map pose closest in time
-        # # needed approach: get pointclouds in the map closest in euclidean distance
-        # map_pose, time_map = self.map.get_pose_closest_to_time(timestamp=current_pcd_time, delta_threshold_s=1.0)
-        # if map_pose is None:
-        #     return
-        #     # continue
-        # # get the closest pcd in the map
-        # map_pcd, pointcloud_time = self.map.get_pcd_closest_to_time(timestamp=current_pcd_time, delta_threshold_s=1.0)
-        # diff = current_pcd_time-pointcloud_time
-        # print('Diff in time: current pcd and map pcd: ', diff)
-        #
-        # # process the current pcd
-        # current_pcd.down_sample(voxel_size=None)
-        # current_pcd.filter_points()
-        # current_pcd.estimate_normals()
-        # # current_pcd.draw_cloud()
-        #
-        # # current the map pcd
-        # map_pcd.load_pointcloud()
-        # map_pcd.down_sample(voxel_size=None)
-        # map_pcd.filter_points()
-        # map_pcd.estimate_normals()
-        # # map_pcd.draw_cloud()
-        # # now, in this, test, consider that the initial transformation is the identity
-        # # In the final approach: consider that the relative initial transformation is known
-        # # Tij0 = HomogeneousMatrix(Vector([0.1, 0.1, 0]), Euler([0.1, 0.1, 0.1]))
-        # Tij0 = HomogeneousMatrix()
-        # Tij = self.scanmatcher.registration(current_pcd, map_pcd, Tij_0=Tij0, show=False)
-        #
-        # map_pcd.unload_pointcloud()
-        # # the map pose (pointcloud)
-        # T0j = map_pose.T()
-        # # estimate the initial i
-        # T0i = T0j*Tij.inv()
-        # self.prior_estimations.append(T0i)
-        # self.processed_map_poses.append(map_pose.T())
-        # # remove pcd from the list
-        # # self.pcdbuffer.popleft()
-
+        # for k in range(n):
+        #     self.initial_estimation_poses_buffer.popleft()
+        #     self.initial_estimation_poses_buffer_indices.pop()
 
     def publish_prior_information_pose(self, T, index_in_graph):
         """
@@ -299,7 +262,7 @@ class GlobalScanMatchingROSNode:
             ax.scatter(all_refined_estimations[:, 0],
                        all_refined_estimations[:, 1], marker='.', color='red')
 
-        canvas.print_figure('plot.png', bbox_inches='tight', dpi=300)
+        canvas.print_figure('plot1.png', bbox_inches='tight', dpi=300)
 
     def run(self):
         rospy.spin()

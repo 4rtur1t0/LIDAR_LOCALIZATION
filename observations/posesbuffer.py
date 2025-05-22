@@ -106,7 +106,7 @@ class PosesBuffer():
         else:
             return idx2 #, t2
 
-    def get_closest_pose_at_time(self, timestamp, delta_threshold_s=1):
+    def get_closest_pose_at_time(self, timestamp, delta_threshold_s=1.0):
         """
         Find a Pose for timestamp, the one that is closets to timestamp.
         """
@@ -119,9 +119,9 @@ class PosesBuffer():
             print('get_index_closest_to_time could not find any close time')
             return None
         if d1 <= d2:
-            return self.poses[idx1]  # , t1
+            return self.poses[idx1], t1
         else:
-            return self.poses[idx2]  # , t2
+            return self.poses[idx2], t2
 
     # def get_closest_pose_at_time(self, timestamp, delta_threshold_s=1):
     #     """
