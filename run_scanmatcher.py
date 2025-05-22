@@ -42,7 +42,7 @@ def compute_rel_distance(odo1, odo2):
 class ScanmatchingNode:
     def __init__(self):
         print('Initializing local scanmatching node!')
-        rospy.init_node('scan_matching_sync_node')
+        rospy.init_node('scanmatching_node')
         print('Subscribing to ODOMETRY and pointclouds')
         print('CAUTION: odometry and poinclouds are synchronized with filter messages')
         print('WAITING FOR MESSAGES!')

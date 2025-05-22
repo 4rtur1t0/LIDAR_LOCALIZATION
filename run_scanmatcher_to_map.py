@@ -70,7 +70,7 @@ class GlobalScanMatchingROSNode:
 
         # ROS STUFFF
         print('Initializing global scanmatching node!')
-        rospy.init_node('localization_node')
+        rospy.init_node('scanmatcher_to_map_node')
         print('Subscribing to PCD, GNSS')
         print('WAITING FOR MESSAGES!')
 
