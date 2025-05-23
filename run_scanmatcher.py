@@ -17,7 +17,7 @@ from observations.posesbuffer import PosesBuffer
 # from tools.gpsconversions import gps2utm
 from sensor_msgs.msg import PointCloud2
 from scanmatcher.scanmatcher import ScanMatcher
-
+import time
 
 fig, ax = plt.subplots()
 canvas = FigureCanvas(fig)
@@ -104,18 +104,21 @@ class ScanmatchingNode:
             self.start_time = timestamp
         self.times_lidar.append(timestamp)
 
+        if len(self.odombuffer.times) == 0:
+            print('Received pointcloud but no odometry yet. Waiting for odometry')
+            return
         print('Received pointcloud')
         # add first pointcloud in this particular case:  only try to get the first pointcloud
         # if we have at least one odometry meeasurement and no initial pcd has been included
         # in order to find a proper initial Tij_0
-        if (len(self.pcdbuffer.times) == 0) and (len(self.odombuffer.times) > 0):
+        if len(self.pcdbuffer.times) == 0: # and (len(self.odombuffer.times) > 0):
             print(30*'+')
             print('add_first_pcd')
             # CAUTION!!! for some reason, the pointclouds and the odometry come at different times
             # IN PARTICULAR, ODOMETRY COMES LATER IN TIME.
             # wait 0.1 s to allow odometry buffer to fill up (approximately)
-            delay = PARAMETERS.config.get('scanmatcher').get('initial_transform').get('delay_seconds_lidar_odometry')
-            rospy.sleep(delay)
+            #delay = PARAMETERS.config.get('scanmatcher').get('initial_transform').get('delay_seconds_lidar_odometry')
+            #rospy.sleep(delay)
             self.add_first_pcd(timestamp=timestamp, msg=msg)
             return
         delta_threshold_s = PARAMETERS.config.get('scanmatcher').get('initial_transform').get('delta_threshold_s')
@@ -149,24 +152,33 @@ class ScanmatchingNode:
         Compute Tij0 from interpolated odom.
         Compute registration
         """
+        start_time = time.time()
         print('timer_callback_process_scanmatching!!')
         print('CURRENT POINTCLOUD BUFFER used percentage is: ', 100*len(self.pcdbuffer.times)/self.pcdbuffer.times.maxlen)
         print(30*'=')
         voxel_size = PARAMETERS.config.get('scanmatcher').get('voxel_size')
         # compute the scanmatching on the clouds stored at the pcdbuffer
         k = 0
-        for i in range(len(self.pcdbuffer)-1):
+        # fix the number of pointclouds to process
+        N = len(self.pcdbuffer)
+        # preprocess pointclouds first
+        for i in range(N):
+            self.pcdbuffer[i].down_sample(voxel_size=voxel_size)
+            self.pcdbuffer[i].filter_points()
+            self.pcdbuffer[i].estimate_normals()
+        # Now iterate and compute
+        for i in range(N-1):
             print('Tiempo lidar', self.pcdbuffer.times[i] - self.start_time)
             # self.pcdbuffer[i].draw_cloud()
             odoi = self.pcdbuffer[i].pose.T()
             odoj = self.pcdbuffer[i+1].pose.T()
             Tij0 = odoi.inv()*odoj
-            self.pcdbuffer[i].down_sample(voxel_size=voxel_size)
-            self.pcdbuffer[i + 1].down_sample(voxel_size=voxel_size)
-            self.pcdbuffer[i].filter_points()
-            self.pcdbuffer[i+1].filter_points()
-            self.pcdbuffer[i].estimate_normals()
-            self.pcdbuffer[i + 1].estimate_normals()
+            # self.pcdbuffer[i].down_sample(voxel_size=voxel_size)
+            # self.pcdbuffer[i + 1].down_sample(voxel_size=voxel_size)
+            # self.pcdbuffer[i].filter_points()
+            # self.pcdbuffer[i+1].filter_points()
+            # self.pcdbuffer[i].estimate_normals()
+            # self.pcdbuffer[i + 1].estimate_normals()
             Tij = self.scanmatcher.registration(self.pcdbuffer[i], self.pcdbuffer[i+1], Tij_0=Tij0)
             # draw registration result
             self.relative_transforms.append((Tij, self.pcdbuffer.times[i+1]))
@@ -181,6 +193,9 @@ class ScanmatchingNode:
         for j in range(k):
             print('Deque used pointcloud')
             self.pcdbuffer.popleft()
+        end_time = time.time()
+        elapsed_time = end_time - start_time
+        print(f"timer_callback_process_scanmatching Execution time: {elapsed_time:.6f} seconds")
 
     def timer_callback_publish_transforms(self, event):
         """
