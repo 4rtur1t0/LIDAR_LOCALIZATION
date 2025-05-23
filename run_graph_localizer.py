@@ -68,7 +68,7 @@ class LocalizationROSNode:
         self.aruco_observations_ids = deque(maxlen=5000)
 
         # the lidar buffer
-        self.pcdbuffer = LidarBuffer(maxlen=30)
+        # self.pcdbuffer = LidarBuffer(maxlen=30)
 
         self.skip_optimization = 5
         self.current_key = 0
@@ -139,9 +139,11 @@ class LocalizationROSNode:
 
         pose = Pose()
         pose.from_message(msg.pose.pose)
-
         if self.last_odom_pose is None:
             self.last_odom_pose = pose
+            # save initial graphslam time
+            self.graphslam_times = np.array([timestamp])
+
         # storing odometry buffer, but not really using it
         self.odom_buffer.append(pose, timestamp)
         # CAUTION! directly updating graph without buffer
@@ -152,9 +154,9 @@ class LocalizationROSNode:
             Get last scanmatching odometry reading and append to buffer.
         """
         timestamp = msg.header.stamp.to_sec()
-        if self.start_time is None:
-            self.start_time = timestamp
-            self.graphslam_times = np.array([timestamp])
+        # if self.start_time is None:
+        #     self.start_time = timestamp
+        #     self.graphslam_times = np.array([timestamp])
         pose = Pose()
         pose.from_message(msg.pose.pose)
         self.odom_sm_buffer.append(pose, timestamp)
@@ -165,9 +167,9 @@ class LocalizationROSNode:
             Also store the frame_id, which corresponds to the actual index in the graph
         """
         timestamp = msg.header.stamp.to_sec()
-        if self.start_time is None:
-            self.start_time = timestamp
-            self.graphslam_times = np.array([timestamp])
+        # if self.start_time is None:
+        #     self.start_time = timestamp
+        #     self.graphslam_times = np.array([timestamp])
         pose = Pose()
         pose.from_message(msg.pose.pose)
         self.map_sm_prior_buffer.append(pose, timestamp)
@@ -178,8 +180,8 @@ class LocalizationROSNode:
             Get last GPS reading and append to buffer.
         """
         timestamp = msg.header.stamp.to_sec()
-        if self.start_time is None:
-            self.start_time = timestamp
+        # if self.start_time is None:
+        #     self.start_time = timestamp
         gpsposition = GPSPosition()
         gpsposition = gpsposition.from_message(msg)
         # filter gps position
@@ -192,8 +194,8 @@ class LocalizationROSNode:
             Get last odom reading and append to buffer.
         """
         timestamp = msg.header.stamp.to_sec()
-        if self.start_time is None:
-            self.start_time = timestamp
+        # if self.start_time is None:
+        #     self.start_time = timestamp
         pose = Pose()
         pose.from_message(msg.pose)
         self.aruco_observations_buffer.append(pose, timestamp)
@@ -213,11 +215,11 @@ class LocalizationROSNode:
         print('UPDATE OBSERVATIONS!! SM, ODO, GPS')
         update_sm_observations(self)
         # caution, called from the callback at each odometry
+        # new states are created using odometry and scanmatching odometry is added as a restriction
         # update_odo_observations(self)
         update_gps_observations(self)
         # add the prior observations with respect to the map. I.e. the localization found in the other node:
         # scanmatcher_to_map
-
         update_prior_map_observations(self)
         # update_aruco_observations(self)
 
@@ -304,7 +306,7 @@ class LocalizationROSNode:
             ax1.scatter(map_robot_path_positions[:, 0],
                         map_robot_path_positions[:, 1], marker='.', color='green', label='Map path')
         ax1.legend()
-        canvas1.print_figure('plot1.png', bbox_inches='tight', dpi=300)
+        canvas1.print_figure('plots/run_graph_localizer_plot1.png', bbox_inches='tight', dpi=300)
 
         # plot other info
         ax2.clear()
@@ -314,15 +316,10 @@ class LocalizationROSNode:
             ax2.plot(update_graph_timer_callback_times, marker='.', color='blue')
         if len(publication_delay_times):
             ax2.plot(publication_delay_times, marker='.', color='red')
-        canvas2.print_figure('plot2.png', bbox_inches='tight', dpi=300)
+        canvas2.print_figure('plots/run_graph_localizer_plot2.png', bbox_inches='tight', dpi=300)
 
         # plot the nodes in the graph
         # nodes that have been related by observations
-        # 'ODOSM': [],
-        # 'ODO': [],
-        # 'GPS': [],
-        # 'ARUCO': [],
-        # 'MAPSM': []
         ax3.clear()
         if len(self.graphslam_observations_indices['ODO']):
             indices = np.array(self.graphslam_observations_indices['ODO'])
@@ -345,7 +342,7 @@ class LocalizationROSNode:
             ax3.plot(indices, 4.0*np.ones(ln), marker='.', color='black',
                      label='MAP Scanmatching prior observations')
         ax3.legend()
-        canvas3.print_figure('plot3.png', bbox_inches='tight', dpi=300)
+        canvas3.print_figure('plots/run_graph_localizer_plot3.png', bbox_inches='tight', dpi=300)
 
     def run(self):
         rospy.spin()

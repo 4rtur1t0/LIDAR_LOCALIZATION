@@ -80,7 +80,7 @@ class GlobalScanMatchingROSNode:
         rospy.Subscriber(INITIAL_ESTIMATED_POSE, Odometry, self.initial_pose_estimation_callback)
 
         # Set up a timer to periodically update the graph
-        rospy.Timer(rospy.Duration(5), self.compute_global_scanmatching)
+        rospy.Timer(rospy.Duration(1), self.compute_global_scanmatching)
         rospy.Timer(rospy.Duration(1), self.plot_timer_callback)
         # Publisher
         self.pub = rospy.Publisher(MAP_SM_GLOBAL_POSE_TOPIC, Odometry, queue_size=10)
@@ -232,6 +232,8 @@ class GlobalScanMatchingROSNode:
         orientation = T.Q()
         msg = Odometry()
         msg.header.stamp = rospy.Time.now()
+        # caution: this index in graph is directly related to the index
+        # in the grapshslam
         msg.header.frame_id = str(index_in_graph) #"map"
         msg.pose.pose.position.x = position[0]
         msg.pose.pose.position.y = position[1]
@@ -262,7 +264,7 @@ class GlobalScanMatchingROSNode:
             ax.scatter(all_refined_estimations[:, 0],
                        all_refined_estimations[:, 1], marker='.', color='red')
 
-        canvas.print_figure('plot1.png', bbox_inches='tight', dpi=300)
+        canvas.print_figure('plots/run_scanmatcher_to_map_plot.png', bbox_inches='tight', dpi=300)
 
     def run(self):
         rospy.spin()

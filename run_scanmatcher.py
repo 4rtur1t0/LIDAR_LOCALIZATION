@@ -68,7 +68,7 @@ class ScanmatchingNode:
         # store the results from the beginning of the experiment
         self.relative_transforms = []
         self.global_transforms = []
-        self.last_global_transform_published = -1
+        self.last_global_transform_published = 0
         self.start_time = None
 
         self.times_odometry = []
@@ -200,11 +200,11 @@ class ScanmatchingNode:
         #     Tg = Tg*Tij
         #     self.global_transforms.append((Tg, timestamp))
         #     self.positions_sm.append(Tg.pos())
-
-        for i in range(len(self.global_transforms)):
-            if i > self.last_global_transform_published:
-                self.publish_pose(T=self.global_transforms[i][0], timestamp=self.global_transforms[i][1])
-                self.last_global_transform_published = i
+        first_index = self.last_global_transform_published
+        for i in range(first_index, len(self.global_transforms)):
+            # if i > self.last_global_transform_published:
+            self.publish_pose(T=self.global_transforms[i][0], timestamp=self.global_transforms[i][1])
+            self.last_global_transform_published += 1
 
     def timer_callback_plot_info(self, event):
         print(50*'*')
@@ -238,7 +238,7 @@ class ScanmatchingNode:
         #                utm_valid_positions[:, 1], marker='.', color='red')
         
 
-        canvas.print_figure('plot.png', bbox_inches='tight')
+        canvas.print_figure('plots/scanmatcher_plot.png', bbox_inches='tight')
 
     def publish_pose(self, T, timestamp):
         """

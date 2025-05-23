@@ -18,8 +18,8 @@ aruco:
 
 # the scanmatcher is used for sequential scanmatching and to find registrations between non-consecutive pointclouds
 scanmatcher:
-  d_poses: 0.3
-  th_poses: 0.2
+  d_poses: 0.2
+  th_poses: 0.1
 
   voxel_size: null # Number or null
 #  voxel_size: 0.2
