@@ -19,12 +19,22 @@ from sensor_msgs.msg import PointCloud2
 from scanmatcher.scanmatcher import ScanMatcher
 import time
 
-fig, ax = plt.subplots()
-canvas = FigureCanvas(fig)
 
 ODOMETRY_TOPIC = '/husky_velocity_controller/odom'
 POINTCLOUD_TOPIC = '/ouster/points_low_rate'
 OUTPUT_TOPIC = '/odometry_lidar_scanmatching'
+
+fig1, ax1 = plt.subplots(figsize=(12, 8))
+ax1.set_title('SCANMATCHING path positions')
+canvas1 = FigureCanvas(fig1)
+
+fig2, ax2 = plt.subplots(figsize=(12, 8))
+ax2.set_title('Computation time scanmatching')
+canvas2 = FigureCanvas(fig2)
+
+# fig3, ax3 = plt.subplots(figsize=(6, 4))
+# ax3.set_title('OBSERVATIONS INDICES IN GRAPH')
+# canvas3 = FigureCanvas(fig3)
 
 
 def compute_rel_distance(odo1, odo2):
@@ -71,13 +81,14 @@ class ScanmatchingNode:
         self.last_global_transform_published = 0
         self.start_time = None
 
+
         self.times_odometry = []
         self.times_lidar = []
         self.positions_sm = []
         # the scanmatching object
         self.scanmatcher = ScanMatcher()
+        self.timer_callback_process_scanmatching_computation_time = []
         rospy.loginfo("ScanMatcher with odom/pc running.")
-        # rospy.spin() !!
 
     def run(self):
         rospy.spin()
@@ -100,8 +111,8 @@ class ScanmatchingNode:
         To save memory, pointclouds are appended if enough distance/angle is traversed (in odometry)
         """
         timestamp = msg.header.stamp.to_sec()
-        if self.start_time is None:
-            self.start_time = timestamp
+        # if self.start_time is None:
+        #     self.start_time = timestamp
         self.times_lidar.append(timestamp)
 
         if len(self.odombuffer.times) == 0:
@@ -191,11 +202,14 @@ class ScanmatchingNode:
             k += 1
         # deque pointclouds and free memory
         for j in range(k):
-            print('Deque used pointcloud')
+            print('Deque used pointclouds')
             self.pcdbuffer.popleft()
         end_time = time.time()
         elapsed_time = end_time - start_time
-        print(f"timer_callback_process_scanmatching Execution time: {elapsed_time:.6f} seconds")
+        self.timer_callback_process_scanmatching_computation_time.append(elapsed_time)
+        print(30*'*')
+        print(f"timer_callback_process_scanmatching Execution time: {elapsed_time:.3f} seconds")
+        print(30 * '*')
 
     def timer_callback_publish_transforms(self, event):
         """
@@ -220,40 +234,6 @@ class ScanmatchingNode:
             # if i > self.last_global_transform_published:
             self.publish_pose(T=self.global_transforms[i][0], timestamp=self.global_transforms[i][1])
             self.last_global_transform_published += 1
-
-    def timer_callback_plot_info(self, event):
-        print(50*'*')
-        print('Number of pointclouds: ')
-        print('len: ', len(self.pcdbuffer))
-        print(50 * '*')
-
-        # odom_times = np.array(self.times_odometry) - self.start_time
-        # lidar_times = np.array(self.times_lidar) - self.start_time
-        # ax.clear()
-        # if len(odom_times) > 1:
-        #     ax.scatter(odom_times, np.ones(len(odom_times)), marker='.', color='blue')
-        # if len(lidar_times) > 1:
-        #     ax.scatter(lidar_times, np.ones(len(lidar_times)), marker='.', color='red')
-
-        # PLOT LOCALIZATION
-        print('Odombuffer length: ', len(self.odombuffer.times))
-        print('LidarBuffer length: ', len(self.pcdbuffer.times))
-        odo_positions = self.odombuffer.get_positions()
-
-        ax.clear()
-        if len(odo_positions) > 0:
-            ax.scatter(odo_positions[:, 0], odo_positions[:, 1], marker='.', color='red', label='Odometry')
-
-        if len(self.positions_sm) > 0:
-            positions_sm = np.array(self.positions_sm)
-            ax.scatter(positions_sm[:, 0], positions_sm[:, 1], marker='.', color='blue', label='Scanmatcher')
-        # if len(self.utm_valid_positions) > 0:
-        #     utm_valid_positions = np.array(self.utm_valid_positions)
-        #     ax.scatter(utm_valid_positions[:, 0],
-        #                utm_valid_positions[:, 1], marker='.', color='red')
-        
-
-        canvas.print_figure('plots/scanmatcher_plot.png', bbox_inches='tight')
 
     def publish_pose(self, T, timestamp):
         """
@@ -321,6 +301,44 @@ class ScanmatchingNode:
         # no transforms published so far
         self.last_global_transform_published = -1
         return odo_t0
+
+    def timer_callback_plot_info(self, event):
+        print(50 * '*')
+        print('Number of pointclouds: ')
+        print('len: ', len(self.pcdbuffer))
+        print(50 * '*')
+
+        # odom_times = np.array(self.times_odometry) - self.start_time
+        # lidar_times = np.array(self.times_lidar) - self.start_time
+        # ax.clear()
+        # if len(odom_times) > 1:
+        #     ax.scatter(odom_times, np.ones(len(odom_times)), marker='.', color='blue')
+        # if len(lidar_times) > 1:
+        #     ax.scatter(lidar_times, np.ones(len(lidar_times)), marker='.', color='red')
+
+        # PLOT LOCALIZATION
+        print('Odombuffer length: ', len(self.odombuffer.times))
+        print('LidarBuffer length: ', len(self.pcdbuffer.times))
+        odo_positions = self.odombuffer.get_positions()
+
+        ax1.clear()
+        if len(odo_positions) > 0:
+            ax1.scatter(odo_positions[:, 0], odo_positions[:, 1], marker='.', color='red', label='Odometry')
+
+        if len(self.positions_sm) > 0:
+            positions_sm = np.array(self.positions_sm)
+            ax1.scatter(positions_sm[:, 0], positions_sm[:, 1], marker='.', color='blue', label='Scanmatcher')
+        # if len(self.utm_valid_positions) > 0:
+        #     utm_valid_positions = np.array(self.utm_valid_positions)
+        #     ax.scatter(utm_valid_positions[:, 0],
+        #                utm_valid_positions[:, 1], marker='.', color='red')
+        canvas1.print_figure('plots/scanmatcher_plot1.png', bbox_inches='tight')
+
+        ax2.clear()
+        computation_times = np.array(self.timer_callback_process_scanmatching_computation_time)
+        if len(computation_times) > 0:
+            ax2.plot(computation_times, marker='.', color='red', label='Computation times (s)')
+        canvas2.print_figure('plots/scanmatcher_plot2.png', bbox_inches='tight')
 
 
 if __name__ == "__main__":

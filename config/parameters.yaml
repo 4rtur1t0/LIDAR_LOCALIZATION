@@ -51,7 +51,7 @@ scanmatcher:
   threads:
     # process scanmatching between pointclouds every 0.35 seconds
     # should be approx. equal to the period between lidar scans
-    seconds_period_scanmatching_thread: 0.1
+    seconds_period_scanmatching_thread: 0.5
     # publish the last transform 0.35 seconds
     seconds_period_publish_thread: 0.5
     # plot info in plot.png
