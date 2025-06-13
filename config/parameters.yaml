@@ -18,8 +18,8 @@ aruco:
 
 # the scanmatcher is used for sequential scanmatching and to find registrations between non-consecutive pointclouds
 scanmatcher:
-  d_poses: 0.2
-  th_poses: 0.1
+  d_poses: 0.3
+  th_poses: 0.2
 
   voxel_size: null # Number or null
 #  voxel_size: 0.2
@@ -53,7 +53,7 @@ scanmatcher:
     # should be approx. equal to the period between lidar scans
     seconds_period_scanmatching_thread: 0.5
     # publish the last transform 0.35 seconds
-    seconds_period_publish_thread: 0.5
+    seconds_period_publish_thread: 0.1
     # plot info in plot.png
     seconds_period_plot_info_thread: 1.0
 

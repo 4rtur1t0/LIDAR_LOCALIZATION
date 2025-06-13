@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from observations.lidarbuffer import LidarBuffer
 from observations.posesbuffer import PosesBuffer
+# from observations.posesarray import PosesArray
 
 
 class Map():
@@ -69,6 +70,19 @@ class Map():
         for _, row in df.iterrows():
             self.landmarks_aruco_ids.append(int(row['aruco_id']))
         self.landmarks_aruco_ids = np.array(self.landmarks_aruco_ids)
+
+    def read_data_tum(self, directory, filename='/robot0/SLAM/data_poses_tum.txt'):
+        """
+        Read the estimated path of the robot in tum format
+        """
+        self.robotpath = PosesArray()
+        self.robotpath.read_data_tum(directory=directory, filename=filename)
+        # Load the LiDAR scan array. Each pointcloud with its associated time.
+        # Each lidar scan is associated to a given pose in the robotpath
+        self.lidarscanarray = LiDARScanArray(directory=directory)
+        self.lidarscanarray.read_parameters()
+        self.lidarscanarray.read_data()
+        self.lidarscanarray.add_lidar_scans()
 
     def draw_all_clouds(self):
         self.lidarscanarray.draw_all_clouds()

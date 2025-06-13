@@ -74,13 +74,12 @@ class ScanmatchingNode:
         # stores odometry poses as a short buffer with deque
         self.odombuffer = PosesBuffer(maxlen=1000)
         # the lidar buffer
-        self.pcdbuffer = LidarBuffer(maxlen=30)
+        self.pcdbuffer = LidarBuffer(maxlen=300)
         # store the results from the beginning of the experiment
         self.relative_transforms = []
         self.global_transforms = []
         self.last_global_transform_published = 0
         self.start_time = None
-
 
         self.times_odometry = []
         self.times_lidar = []
@@ -245,6 +244,8 @@ class ScanmatchingNode:
         position = T.pos()
         orientation = T.Q()
         msg = Odometry()
+        # Yes! caution. Publishing scanmatching transformation at the corresponding timestamp (in
+        # the past)
         msg.header.stamp = rospy.Time.from_sec(timestamp)
         msg.header.frame_id = "map"
         msg.pose.pose.position.x = position[0]

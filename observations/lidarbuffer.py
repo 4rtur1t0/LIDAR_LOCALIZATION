@@ -89,6 +89,7 @@ class LidarBuffer:
         """
         Get the pointcloud found at the closest time, within deltathreshold
         """
+        tt = np.array(self.times) -timestamp
         index = bisect.bisect_left(self.times, timestamp)
         delta = delta_threshold_s
         if index < len(self.times):
@@ -193,10 +194,10 @@ class LidarScan():
         idx2 = np.where((z > min_height) & (z < max_height))
         return o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points[idx2]))
 
-    def estimate_normals(self):
+    def estimate_normals(self, voxel_size_normals, max_nn_estimate_normals):
         self.pointcloud.estimate_normals(
-             o3d.geometry.KDTreeSearchParamHybrid(radius=self.voxel_size_normals,
-                                                  max_nn=self.max_nn_estimate_normals))
+             o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size_normals,
+                                                  max_nn=max_nn_estimate_normals))
 
     def transform(self, T):
         return self.pointcloud.transform(T)

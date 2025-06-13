@@ -13,7 +13,7 @@ from graphSLAM.helper_functions import update_sm_observations, update_odo_observ
 from map.map import Map
 from nav_msgs.msg import Odometry
 from observations.gpsbuffer import GPSBuffer, GPSPosition
-from observations.lidarbuffer import LidarBuffer
+# from observations.lidarbuffer import LidarBuffer
 from observations.posesbuffer import PosesBuffer, Pose
 from sensor_msgs.msg import NavSatFix
 from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
@@ -37,11 +37,21 @@ fig3, ax3 = plt.subplots(figsize=(6, 4))
 ax3.set_title('OBSERVATIONS INDICES IN GRAPH')
 canvas3 = FigureCanvas(fig3)
 
+ODOMETRY_TOPIC = '/husky_velocity_controller/odom'
+# ODOMETRY_SCANMATCHING_LIDAR_TOPIC='/odometry_lidar_scanmatching'
+ODOMETRY_SCANMATCHING_LIDAR_TOPIC = '/genz/odometry'
+# GNSS_TOPIC = '/gnss/fix'
+GNSS_TOPIC = '/gnss/fix_NO_GPS'
+MAP_SM_GLOBAL_POSE_TOPIC = '/map_sm_global_pose'
 
 class LocalizationROSNode:
     def __init__(self):
-        pose0 = Pose({'x': -46.72, 'y': 2.05, 'z': -2.0,
-                      'qx': 0.00, 'qy': -0.013, 'qz': 0.76, 'qw': 0.64})
+        pose0 = Pose({'x': 0.0, 'y': 0.0, 'z': 0.0,
+                      'qx': 0.00, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0})
+
+        # pose0 = Pose({'x': 0.0, 'y': 2.05, 'z': -2.0,
+        #               'qx': 0.00, 'qy': -0.013, 'qz': 0.76, 'qw': 0.64})
+
         # transforms
         T0 = pose0.T() #HomogeneousMatrix()
         # T LiDAR-GPS
@@ -53,16 +63,16 @@ class LocalizationROSNode:
         self.graphslam.init_graph()
 
         # store odometry in deque fashion
-        self.odom_buffer = PosesBuffer(maxlen=5000)
+        self.odom_buffer = PosesBuffer(maxlen=500)
         # store scanmatcher odometry in deque fashion
-        self.odom_sm_buffer = PosesBuffer(maxlen=5000)
+        self.odom_sm_buffer = PosesBuffer(maxlen=500)
 
         # store the priors received from the scanmatching localization node in deque fashion
-        self.map_sm_prior_buffer = PosesBuffer(maxlen=5000)
-        self.map_sm_prior_buffer_index = deque(maxlen=5000)
+        self.map_sm_prior_buffer = PosesBuffer(maxlen=500)
+        self.map_sm_prior_buffer_index = deque(maxlen=500)
 
         # store gps readings (in utm)
-        self.gps_buffer = GPSBuffer(maxlen=5000)
+        self.gps_buffer = GPSBuffer(maxlen=500)
         # store ARUCO observations and ids
         self.aruco_observations_buffer = PosesBuffer(maxlen=5000)
         self.aruco_observations_ids = deque(maxlen=5000)
@@ -91,7 +101,7 @@ class LocalizationROSNode:
                                                'ODO': [],
                                                'GPS': [],
                                                'ARUCO': [],
-                                               'MAPSM': []}
+                                               'MAPSM': set()}
         # LOAD THE MAP
         directory = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
         self.map = Map()
@@ -106,20 +116,19 @@ class LocalizationROSNode:
         print('WAITING FOR MESSAGES!')
 
         # Subscriptions
-        rospy.Subscriber('/husky_velocity_controller/odom', Odometry, self.odom_callback)
-        rospy.Subscriber('/odometry_lidar_scanmatching', Odometry, self.odom_sm_callback)
-        rospy.Subscriber('/gnss/fix', NavSatFix, self.gps_callback)
+        rospy.Subscriber(ODOMETRY_TOPIC, Odometry, self.odom_callback)
+        rospy.Subscriber(ODOMETRY_SCANMATCHING_LIDAR_TOPIC, Odometry, self.odom_sm_callback)
+        rospy.Subscriber(GNSS_TOPIC, NavSatFix, self.gps_callback)
         # the ARUCO observations
         rospy.Subscriber('/aruco_observation', PoseStamped, self.aruco_observation_callback)
-        rospy.Subscriber('/map_sm_global_pose', Odometry, self.map_sm_global_pose_callback)
-
+        rospy.Subscriber(MAP_SM_GLOBAL_POSE_TOPIC, Odometry, self.map_sm_global_pose_callback)
 
         # Set up a timer to periodically update the graphSLAM graph
         rospy.Timer(rospy.Duration(1), self.update_graph_timer_callback)
         # Set up a timer to compute
         # rospy.Timer(rospy.Duration(1), self.compute_scanmatching_to_map)
         # Set up a timer to periodically update the plot
-        rospy.Timer(rospy.Duration(2), self.plot_timer_callback)
+        rospy.Timer(rospy.Duration(5), self.plot_timer_callback)
 
         # Publisher
         self.pub = rospy.Publisher('/localized_pose', Odometry, queue_size=10)
@@ -288,11 +297,11 @@ class LocalizationROSNode:
         map_sm_prior_positions = self.map_sm_prior_buffer.get_positions()
         # plot the groundtruth of the map
         map_robot_path_positions = self.map.robotpath.get_positions()
-        map_robot_path_positions = map_robot_path_positions[0:500, :]
+        # map_robot_path_positions = map_robot_path_positions[0:500, :]
         # plot posittions
         ax1.clear()
         if len(positions) > 0:
-            ax1.scatter(positions[:, 0], positions[:, 1], marker='.', color='blue', label='GraphSLAM solutions')
+            ax1.scatter(positions[:, 0], positions[:, 1], marker='.', s=100, color='blue', label='GraphSLAM solutions')
 
         if len(utmpositions) > 0:
             ax1.scatter(utmpositions[:, 0],
@@ -300,11 +309,11 @@ class LocalizationROSNode:
 
         if len(map_sm_prior_positions) > 0:
             ax1.scatter(map_sm_prior_positions[:, 0],
-                        map_sm_prior_positions[:, 1], marker='.', color='black', label='Map prior Scanmatching')
+                        map_sm_prior_positions[:, 1], marker='.', s=20, color='black', label='Map prior Scanmatching')
 
         if len(map_robot_path_positions) > 0:
             ax1.scatter(map_robot_path_positions[:, 0],
-                        map_robot_path_positions[:, 1], marker='.', color='green', label='Map path')
+                        map_robot_path_positions[:, 1], marker='.', s=1, color='green', label='Map path')
         ax1.legend()
         canvas1.print_figure('plots/run_graph_localizer_plot1.png', bbox_inches='tight', dpi=300)
 
@@ -337,7 +346,7 @@ class LocalizationROSNode:
             ax3.plot(indices, 3.0*np.ones(ln), marker='.', color='blue',
                      label='GPS prior observations')
         if len(self.graphslam_observations_indices['MAPSM']):
-            indices = np.array(self.graphslam_observations_indices['MAPSM'])
+            indices = np.array(list(self.graphslam_observations_indices['MAPSM']))
             ln = len(indices)
             ax3.plot(indices, 4.0*np.ones(ln), marker='.', color='black',
                      label='MAP Scanmatching prior observations')

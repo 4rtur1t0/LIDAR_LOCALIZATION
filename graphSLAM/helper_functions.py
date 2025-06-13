@@ -137,6 +137,10 @@ def update_gps_observations(nodeloc):
 
 
 def update_prior_map_observations(nodeloc):
+    """
+    This loops through the observations on the map.
+    Each observation is a prior localization/refinement on the map.
+    """
     if len(nodeloc.map_sm_prior_buffer) == 0:
         print("\033[91mCaution!!! No SM GLOBAL PRIOR in buffer yet.\033[0m")
         return
@@ -146,15 +150,20 @@ def update_prior_map_observations(nodeloc):
 
     # loop through the received prior estimations.
     # add them to the graph
-    first_index = nodeloc.last_processed_index['MAPSM']
-    for i in range(first_index, len(nodeloc.map_sm_prior_buffer)):
-        prior_i = nodeloc.map_sm_prior_buffer[i]
+    # caution: all the observations have to be processed
+    # first_index = nodeloc.last_processed_index['MAPSM']
+    # for i in range(first_index, len(nodeloc.map_sm_prior_buffer)):
+    for i in range(len(nodeloc.map_sm_prior_buffer)):
         index_graph_i = int(nodeloc.map_sm_prior_buffer_index[i])
+        # if the index in the graph has been processed: do not repeat.
+        if index_graph_i in nodeloc.graphslam_observations_indices['MAPSM']:
+            continue
+        prior_i = nodeloc.map_sm_prior_buffer[i]
         Trobot_prior = prior_i.T()
-        # add_prior_factor, aruco transform i, aruco_id
+        # add_prior_factor, this is the localization according to the map scanmatching node.
         nodeloc.graphslam.add_prior_factor(Trobot_prior, index_graph_i, 'MAPSM')
-        nodeloc.graphslam_observations_indices['MAPSM'].append(i)
-        nodeloc.last_processed_index['MAPSM'] = i + 1
+        nodeloc.graphslam_observations_indices['MAPSM'].add(index_graph_i)
+        # nodeloc.last_processed_index['MAPSM'] = i + 1
 
     # for i in range(k):
     #     nodeloc.map_sm_prior_buffer.popleft()
