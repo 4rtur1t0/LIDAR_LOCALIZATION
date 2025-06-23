@@ -38,11 +38,14 @@ ax3.set_title('OBSERVATIONS INDICES IN GRAPH')
 canvas3 = FigureCanvas(fig3)
 
 ODOMETRY_TOPIC = '/husky_velocity_controller/odom'
-# ODOMETRY_SCANMATCHING_LIDAR_TOPIC='/odometry_lidar_scanmatching'
-ODOMETRY_SCANMATCHING_LIDAR_TOPIC = '/genz/odometry'
+ODOMETRY_SCANMATCHING_LIDAR_TOPIC='/odometry_lidar_scanmatching'
+# ODOMETRY_SCANMATCHING_LIDAR_TOPIC = '/genz/odometry'
 # GNSS_TOPIC = '/gnss/fix'
-GNSS_TOPIC = '/gnss/fix_NO_GPS'
+GNSS_TOPIC = '/gnss/fix_fake'
 MAP_SM_GLOBAL_POSE_TOPIC = '/map_sm_global_pose'
+
+# the localized estimation, based on odometry, local scanmatching and global scanmatching
+OUTPUT_TOPIC = '/localized_pose'
 
 class LocalizationROSNode:
     def __init__(self):
@@ -120,7 +123,7 @@ class LocalizationROSNode:
         rospy.Subscriber(ODOMETRY_SCANMATCHING_LIDAR_TOPIC, Odometry, self.odom_sm_callback)
         rospy.Subscriber(GNSS_TOPIC, NavSatFix, self.gps_callback)
         # the ARUCO observations
-        rospy.Subscriber('/aruco_observation', PoseStamped, self.aruco_observation_callback)
+        # rospy.Subscriber('/aruco_observation', PoseStamped, self.aruco_observation_callback)
         rospy.Subscriber(MAP_SM_GLOBAL_POSE_TOPIC, Odometry, self.map_sm_global_pose_callback)
 
         # Set up a timer to periodically update the graphSLAM graph
@@ -131,7 +134,7 @@ class LocalizationROSNode:
         rospy.Timer(rospy.Duration(5), self.plot_timer_callback)
 
         # Publisher
-        self.pub = rospy.Publisher('/localized_pose', Odometry, queue_size=10)
+        self.pub = rospy.Publisher(OUTPUT_TOPIC, Odometry, queue_size=10)
 
         # TIME measurement
         self.update_graph_timer_callback_times = []
@@ -182,7 +185,7 @@ class LocalizationROSNode:
         pose = Pose()
         pose.from_message(msg.pose.pose)
         self.map_sm_prior_buffer.append(pose, timestamp)
-        self.map_sm_prior_buffer_index.append(msg.header.frame_id)
+        # self.map_sm_prior_buffer_index.append(msg.header.frame_id)
 
     def gps_callback(self, msg):
         """

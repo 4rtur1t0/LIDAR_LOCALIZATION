@@ -21,14 +21,14 @@ scanmatcher:
   d_poses: 0.3
   th_poses: 0.2
 
-  voxel_size: null # Number or null
+  voxel_size: 0.05 # Number or null
 #  voxel_size: 0.2
 
   # find the closest points within this distance in ICP
-  icp_threshold: 2.0
+  icp_threshold: 5.0
   # filter points by radius
   min_radius: 0.3  #0.5 para no encontrarse con el robot
-  max_radius: 20 #100
+  max_radius: 15 #100
   # filter points by height
   min_height: -5.0
   max_height: 10.0

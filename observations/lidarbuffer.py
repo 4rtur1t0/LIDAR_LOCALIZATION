@@ -6,6 +6,7 @@ import copy
 import gc
 from config import PARAMETERS
 import sensor_msgs.point_cloud2 as pc2
+import ros_numpy
 import numpy as np
 import pandas as pd
 
@@ -137,11 +138,29 @@ class LidarScan():
         self.min_height = PARAMETERS.config.get('scanmatcher').get('min_height', None)
         self.max_height = PARAMETERS.config.get('scanmatcher').get('max_height', None)
 
+    # def load_pointcloud_from_msg(self, msg):
+    #     self.time = msg.header.stamp.to_sec()
+    #     cloud = np.array([p[:3] for p in pc2.read_points(msg, skip_nans=True)])
+    #     self.pointcloud = o3d.geometry.PointCloud()
+    #     self.pointcloud.points = o3d.utility.Vector3dVector(cloud)
+
+    # def load_pointcloud_from_msg(self, msg):
+    #     self.time = msg.header.stamp.to_sec()
+    #     cloud = pc2.read_points(msg, field_names=('x', 'y', 'z'), skip_nans=True)
+    #     cloud = list(cloud)
+    #     self.pointcloud = o3d.geometry.PointCloud()
+    #     self.pointcloud.points = o3d.utility.Vector3dVector(cloud)
+
     def load_pointcloud_from_msg(self, msg):
+        """
+        Using ros_numpy, the other versions based on pc2 are extremely slow!
+        """
         self.time = msg.header.stamp.to_sec()
-        cloud = np.array([p[:3] for p in pc2.read_points(msg, skip_nans=True)])
+        points = ros_numpy.point_cloud2.pointcloud2_to_xyz_array(msg)
+            # .read_points(msg, field_names=('x', 'y', 'z'), skip_nans=True)
+        # cloud = list(cloud)
         self.pointcloud = o3d.geometry.PointCloud()
-        self.pointcloud.points = o3d.utility.Vector3dVector(cloud)
+        self.pointcloud.points = o3d.utility.Vector3dVector(points)
 
     def load_pointcloud(self):
         """

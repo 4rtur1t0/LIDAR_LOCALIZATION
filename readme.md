@@ -12,3 +12,26 @@ Timestamp viewer
 
 data_viewer
 
+
+rosbag play IO2-2025-03-25-16-54-17.bag --clock -r0.5 --start 0
+
+# El nodo de localización
+run_graph_localizer.sh
+
+# el nodo de localización local
+run_scanmatcher.sh
+
+#Refina localized_pose sobre un mapa global
+
+run_scanmatcher_to_global_map.sh
+
+
+
+
+Instalar paquetes
+numpy==1.21.6
+open3d
+pandas==1.5.3
+gtsam
+matplotlib
+sudo apt install ros-noetic-ros-numpy

@@ -147,7 +147,7 @@ class PosesBuffer():
     #         return None
     #     return self.poses[idx]
 
-    def interpolated_pose_at_time(self, timestamp, delta_threshold_s=1):
+    def interpolated_pose_at_time(self, timestamp, delta_threshold_s=1.0):
         """
         Find a Pose for timestamp, by looking for the two closest times t1 and t2 and
         computing an interpolation
@@ -155,7 +155,8 @@ class PosesBuffer():
         idx1, t1, idx2, t2 = self.find_closest_times_around_t_bisect(timestamp)
         if idx1 is None:
             return None, None
-        # print('Time distances: ', (timestamp-t1), (t2-timestamp))
+        print('Time distances: ', (timestamp-t1), (t2-timestamp))
+        print('Buffer length: ', len(self.times))
         dt1 = (timestamp-t1)
         dt2 = (t2-timestamp)
         if ((timestamp - t1) > delta_threshold_s) or ((t2-timestamp) > delta_threshold_s):
