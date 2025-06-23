@@ -152,16 +152,13 @@ def update_prior_map_observations(nodeloc):
     first_index_in_graphslam = nodeloc.last_processed_index['MAPSM']
     # running through the nodes of the graph (non visited yet). Looking for gps observations at that time
     for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times)):
-        # index_graph_i = int(nodeloc.map_sm_prior_buffer_index[i])
-        # if the index in the graph has been processed: do not repeat.
-        # if index_graph_i in nodeloc.graphslam_observations_indices['MAPSM']:
-        #     continue
+    # for i in range(0, len(nodeloc.graphslam_times)):
         # get the corresponding time
         timestamp_i_in_graphslam = nodeloc.graphslam_times[i]
 
         # find the interpolation that corresponds to that particular time in the graph
         prior_i, _ = nodeloc.map_sm_prior_buffer.interpolated_pose_at_time(timestamp_i_in_graphslam,
-                                                                        delta_threshold_s=2.0)
+                                                                        delta_threshold_s=3.0)
         if prior_i is None:
             print('No estimation found')
             continue
@@ -169,7 +166,7 @@ def update_prior_map_observations(nodeloc):
         # add_prior_factor, this is the localization according to the map scanmatching node.
         nodeloc.graphslam.add_prior_factor(Trobot_prior, i, 'MAPSM')
         nodeloc.graphslam_observations_indices['MAPSM'].add(i)
-        nodeloc.last_processed_index['MAPSM'] = i + 1
+        nodeloc.last_processed_index['MAPSM'] = max(0, i - 5)
 
 
     # # loop through the received prior estimations.

@@ -98,7 +98,7 @@ class GlobalMap():
 
     def perform_global_localization_of_scan_i(self, local_scan, initial_guess, show=False):
         voxel_size_local_scan = 0.2
-
+        # show = True
         print("[INFO] Local scan loaded with", len(local_scan.pointcloud.points), "points.")
 
         # local_scan.filter_height(heights=heights)
@@ -109,9 +109,29 @@ class GlobalMap():
         # 2. Load or simulate a new LiDAR scan (local point cloud)
         # local_scan = o3d.io.read_point_cloud("local_scan.pcd")
 
+        # reduce to a local map, reduce the number of points
+        global_map_temp = self.global_map
+        x = initial_guess.array[0][3]
+        y = initial_guess.array[1][3]
+        ##
+        # self.global_map_temp.filter_coordinates(x_limits=(x-12, x+12), y_limits=(y-12,y+12), z_limits=(-20, 20))
+        x_min = x-20.0
+        x_max = x+20
+        y_min = y-20
+        y_max = y+20
+        z_min = -20
+        z_max = 20
+        points = np.asarray(global_map_temp.points)
+        [x, y, z] = points[:, 0], points[:, 1], points[:, 2]
+        idx = np.where((x > x_min) & (x < x_max) & (y > y_min) & (y < y_max) & (z > z_min) & (z < z_max))
+        global_map_temp = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points[idx]))
+        global_map_temp.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=0.3,
+                                                               max_nn=50))
+        ##
+
         # 6. ICP registration (use as NDT substitute)
         reg_result = o3d.pipelines.registration.registration_icp(
-            local_scan.pointcloud, self.global_map, max_correspondence_distance=5.0,
+            local_scan.pointcloud, global_map_temp, max_correspondence_distance=8.0,
             init=initial_guess.array,
             estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane()
         )
@@ -122,7 +142,7 @@ class GlobalMap():
             # 7. Visualize result
             local_scan.transform(reg_result.transformation)
             # filter height of result
-            points = np.asarray(self.global_map.points)
+            points = np.asarray(global_map_temp.points)
             # [x, y, z] = points[:, 0], points[:, 1], points[:, 2]
             idx2 = np.where((points[:, 2] > -1.0) & (points[:, 2] < 1.5))
             global_map_filtered=o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points[idx2]))

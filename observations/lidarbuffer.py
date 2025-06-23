@@ -213,6 +213,20 @@ class LidarScan():
         idx2 = np.where((z > min_height) & (z < max_height))
         return o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points[idx2]))
 
+    def filter_coordinates(self, x_limits, y_limits, z_limits):
+        x_min = x_limits[0]
+        x_max = x_limits[1]
+        y_min = y_limits[0]
+        y_max = y_limits[1]
+        z_min = z_limits[0]
+        z_max = z_limits[1]
+        points = np.asarray(self.pointcloud.points)
+        [x, y, z] = points[:, 0], points[:, 1], points[:, 2]
+        idx1 = np.where((x > x_min) & (x < x_max))
+        idx2 = np.where((y > y_min) & (y < y_max))
+        idx3 = np.where((z > z_min) & (z < z_max))
+        return o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points[idx1&idx2&idx3]))
+
     def estimate_normals(self, voxel_size_normals, max_nn_estimate_normals):
         self.pointcloud.estimate_normals(
              o3d.geometry.KDTreeSearchParamHybrid(radius=voxel_size_normals,
