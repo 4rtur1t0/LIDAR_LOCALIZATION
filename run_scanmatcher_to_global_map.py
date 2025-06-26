@@ -10,38 +10,19 @@ We are integrating odometry, scanmatching odometry and (if present) GPS.
     As a result, we end up having another prior3Dfactor observation on the state X(i)
 
 """
-from collections import deque
 import rospy
-# import numpy as np
-# from graphSLAM.helper_functions import update_sm_observations, update_odo_observations, \
-#     filter_and_convert_gps_observations, update_gps_observations, update_aruco_observations
-# from map.map import Map
 from nav_msgs.msg import Odometry
-# from observations.gpsbuffer import GPSBuffer, GPSPosition
 from observations.lidarbuffer import LidarBuffer, LidarScan
 from observations.posesbuffer import PosesBuffer, Pose
-# from scanmatcher.scanmatcher import ScanMatcher
 from sensor_msgs.msg import PointCloud2
-# from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
-# import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-# from graphSLAM.graphSLAM import GraphSLAM
-# from artelib.homogeneousmatrix import HomogeneousMatrix
-# from artelib.vector import Vector
-# from artelib.euler import Euler
-# from config import PARAMETERS
-# from tools.gpsconversions import gps2utm
 from observations.posesbuffer import PosesBuffer
 import time
 import open3d as o3d
 import numpy as np
 from artelib.homogeneousmatrix import HomogeneousMatrix
-# from lidarscanarray.lidarscanarray import LiDARScanArray
 import matplotlib.pyplot as plt
-
 import pandas as pd
-
-
 
 
 fig1, ax1 = plt.subplots(figsize=(12, 8))
@@ -80,23 +61,15 @@ class GlobalMap():
         self.global_map.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=0.3,
                                                                      max_nn=50))
 
-    # def read_data_tum(self, directory, filename='/robot0/SLAM/data_poses_tum.txt'):
-    #     """
-    #     Read the estimated path of the robot in tum format
-    #     """
-    #     robotpath = PosesBuffer()
-    #     robotpath.read_data_tum(directory=directory, filename=filename)
-    #     positions = robotpath.get_positions()
-    #     return np.array(positions)
-
-    def plot_result(self, estimated_positions):
-        plt.plot(estimated_positions[:, 0], estimated_positions[:, 1], marker='o', color='blue', label='estimated positions')
-        # plt.plot(self.ground_truth_path[:, 0], self.ground_truth_path[:, 1], marker='.', color='black', label='ground_truth')
-        # plt.legend()
-        plt.show(block=False)
-        plt.pause(interval=0.1)
 
     def perform_global_localization_of_scan_i(self, local_scan, initial_guess, show=False):
+        """
+        # the local scan is registered agaistnthe global map.
+        It is important to start with a nice estimation
+        In addition, the min and max radius of th elocal scan must not be very large.
+        These radius have to be in accordance with the filtered submap (currently +-20m centerede
+        at the current robot position)
+        """
         voxel_size_local_scan = 0.2
         # show = True
         print("[INFO] Local scan loaded with", len(local_scan.pointcloud.points), "points.")
@@ -110,6 +83,7 @@ class GlobalMap():
         # local_scan = o3d.io.read_point_cloud("local_scan.pcd")
 
         # reduce to a local map, reduce the number of points
+        # filter a submap of 20x20 centered on the current xy position
         global_map_temp = self.global_map
         x = initial_guess.array[0][3]
         y = initial_guess.array[1][3]
@@ -122,11 +96,12 @@ class GlobalMap():
         z_min = -20
         z_max = 20
         points = np.asarray(global_map_temp.points)
+        normals = np.asarray(global_map_temp.normals)
         [x, y, z] = points[:, 0], points[:, 1], points[:, 2]
         idx = np.where((x > x_min) & (x < x_max) & (y > y_min) & (y < y_max) & (z > z_min) & (z < z_max))
         global_map_temp = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points[idx]))
-        global_map_temp.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=0.3,
-                                                               max_nn=50))
+        # Do not compute normals: just copy them as filtered.
+        global_map_temp.normals = o3d.utility.Vector3dVector(normals[idx])
         ##
 
         # 6. ICP registration (use as NDT substitute)
@@ -145,7 +120,7 @@ class GlobalMap():
             points = np.asarray(global_map_temp.points)
             # [x, y, z] = points[:, 0], points[:, 1], points[:, 2]
             idx2 = np.where((points[:, 2] > -1.0) & (points[:, 2] < 1.5))
-            global_map_filtered=o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points[idx2]))
+            global_map_filtered = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points[idx2]))
             global_map_filtered.paint_uniform_color([1.0, 0, 0])
             local_scan.pointcloud.paint_uniform_color([0, 0, 1.0])
             # o3d.visualization.draw_geometries([local_scan.pointcloud])
@@ -156,27 +131,13 @@ class GlobalMap():
 class GlobalScanMatchingROSNode:
     def __init__(self):
         self.start_time = None
-        # the lidar buffer
-        # self.pcdbuffer = LidarBuffer(maxlen=100)
-        # self.times_lidar = []
         # store odometry in deque fashion
         self.localized_pose_buffer = PosesBuffer(maxlen=5000)
-        # this stores the indices in graphslam
-        # self.localized_pose_buffer_indices = deque(maxlen=5000)
-        # stores the indexes X(i) of the poses that have been processed
-        # self.localized_pose_buffer_processed_indices = set()
 
         # LOAD THE MAP
         print('Loading MAP')
-        # directory = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
-        # self.map = Map()
-        # self.map.read_data(directory=directory)
-        #
-        # # the scanmatching object
-        # self.scanmatcher = ScanMatcher()
-
-        # map_directory = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
         self.global_map = GlobalMap(map_directory=MAP_DIRECTORY, map_filename='global_map.pcd')
+        print('Map loaded!')
 
         # ROS STUFFF
         print('Initializing global scanmatching node!')
@@ -185,47 +146,41 @@ class GlobalScanMatchingROSNode:
         print('WAITING FOR MESSAGES!')
 
         # Subscriptions to the pointcloud topic and to the
-        # current localized pose
+        # CAution!!! There must be a delay between the received pointcloud and the
+        # /localized_pose trajectory. In particular, the pointcloud times must be
+        # retarded with respect to the /localized_pose
         rospy.Subscriber(POINTCLOUD_TOPIC, PointCloud2, self.pc_callback, queue_size=1)
+        # subscription to the current localized pose
         rospy.Subscriber(INITIAL_ESTIMATED_POSE, Odometry, self.localized_pose_callback)
 
         # Set up a timer to periodically update the graph
-        # t1 = 0.5
-        # rospy.Timer(rospy.Duration(secs=0, nsecs=int(t1*1e9)), self.compute_global_scanmatching_reversed)
-        rospy.Timer(rospy.Duration(1), self.plot_timer_callback)
+        rospy.Timer(rospy.Duration(5), self.plot_timer_callback)
         # Publisher
         self.pub = rospy.Publisher(MAP_SM_GLOBAL_POSE_TOPIC, Odometry, queue_size=10)
 
         # print info.
         self.all_initial_estimations = [] # initial without map
         self.all_refined_estimations = [] # compared to map
-        # self.prior_estimations = []
-        # self.processed_map_poses = []
         # caution: skipping some of the pointclouds
-        self.pointcloud_number = 0
-        # self.pointcloud_skip = 2
         self.times_pcd = []
         self.times_pose_buffer = []
+        self.diff_times_pcd_pose = []
 
     def pc_callback(self, msg):
         """
         Get last pcd reading and try to localize it
         """
-        # self.pointcloud_number += 1
-        # if self.pointcloud_number % self.pointcloud_skip != 0:
-        #     return
         start_time = time.time()
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
             self.start_time = timestamp
-        # self.times_lidar.append(timestamp)
         print('Received pointcloud')
         pcd = LidarScan(time=timestamp, pose=None)
         pcd.load_pointcloud_from_msg(msg=msg)
-        # self.pcdbuffer.append(pcd=pcd, time=timestamp)
 
+        # given the current /localized_pose, refine this information by
+        # registering the current scan against the global map.
         self.compute_global_scanmatching(pcd, timestamp_pcd=timestamp)
-
         end_time = time.time()
         print(30 * '+')
         print('Received and loaded pointcloud')
@@ -247,9 +202,6 @@ class GlobalScanMatchingROSNode:
         pose = Pose()
         pose.from_message(msg.pose.pose)
         self.localized_pose_buffer.append(pose, timestamp)
-        # self.localized_pose_buffer_indices.append(int(msg.header.frame_id))
-        # yes, the current initial estimation has not been processed yet
-        # self.localized_pose_buffer_processed.append(False)
 
     def compute_global_scanmatching(self, pcd, timestamp_pcd):
         """
@@ -273,31 +225,25 @@ class GlobalScanMatchingROSNode:
             # must be added as a prior
             CAUTION: the process
         """
-        # if len(self.pcdbuffer) == 0:
-        #     print("\033[91mCaution!!! No PCD received yet.\033[0m")
-        #     return
-
         start = time.time()
         if len(self.localized_pose_buffer) == 0:
             print("\033[91mCaution!!! No initial /localized_pose received yet.\033[0m")
             return
-        # save times
-        # self.times_pcd.append(timestamp_pcd)
-        # self.times_pose_buffer.append(np.array(self.localized_pose_buffer.times))
-        # df1 = pd.DataFrame(self.times_pcd, columns=["times_pcd"])
-        # df1.to_csv('times_pcd.csv', index=False)
-        #
-        # df2 = pd.DataFrame(self.localized_pose_buffer.times, columns=["times_pcd"])
-        # df2.to_csv('times_pcd.csv', index=False)
-
+        # difference, pcd last localized pose
+        diff = timestamp_pcd - self.localized_pose_buffer.times[-1]
+        self.diff_times_pcd_pose.append(diff)
 
         # get the closest initial estimation at the pointcloud timestamp
-        posei, timestampi = self.localized_pose_buffer.interpolated_pose_at_time(timestamp_pcd,
-                                                                                 delta_threshold_s=1.0)
+        # posei, timestampi = self.localized_pose_buffer.interpolated_pose_at_time(timestamp=timestamp_pcd,
+        #                                                                          delta_threshold_s=DELTA_THRESHOLD_S)
+        posei, timestampi = self.localized_pose_buffer.get_closest_pose_at_time(timestamp=timestamp_pcd,
+                                                             delta_threshold_s=DELTA_THRESHOLD_S)
+        # this is needed to find localized_pose measurements corresponding to the last received pointcloud
         if posei is None:
             print('Caution: no initial estimation found por pcd')
-            # print('Waiting need a delay')
-            # time.sleep(0.5)
+            print('Waiting need a delay')
+            print(30*'ERROR posei ')
+            # time.sleep(1.0)
             return
         # the initial estimation at that time is:
         T0i = posei.T()
@@ -363,16 +309,16 @@ class GlobalScanMatchingROSNode:
         canvas1.print_figure('plots/run_scanmatcher_to_map_plot.png', bbox_inches='tight', dpi=300)
 
 
-        # ax2.clear()
-        # initial_poses_times = np.array(self.initial_estimation_poses_buffer.times)/
-        # if len(initial_poses_times) > 0:
-        #     ax2.plot(initial_poses_times, marker='.', color='blue', label='Initial pose estimation times')
-        #
+        ax2.clear()
+        diff_times_pcd_pose = np.array(self.diff_times_pcd_pose)
+        if len(diff_times_pcd_pose) > 0:
+            ax2.plot(diff_times_pcd_pose, marker='.', color='blue', label='Initial pose estimation idff times')
+
         # pcd_times = np.array(self.pcdbuffer.times)
         # if len(pcd_times) > 0:
         #     ax2.plot(pcd_times, marker='.', color='red', label='Pointcloud times')
-        # ax2.legend()
-        # canvas2.print_figure('plots/run_scanmatcher_to_map_plot2_times.png', bbox_inches='tight', dpi=300)
+        ax2.legend()
+        canvas2.print_figure('plots/run_scanmatcher_to_map_plot2_times.png', bbox_inches='tight', dpi=300)
 
         # print('Plotting info on times')
         # ax2.clear()
@@ -392,7 +338,6 @@ class GlobalScanMatchingROSNode:
 
 
 if __name__ == "__main__":
-    # filename = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17.bag'
     node = GlobalScanMatchingROSNode()
     node.run()
 

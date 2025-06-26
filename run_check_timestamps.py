@@ -10,27 +10,27 @@ We are integrating odometry, scanmatching odometry and (if present) GPS.
     As a result, we end up having another prior3Dfactor observation on the state X(i)
 
 """
-from collections import deque
+# from collections import deque
 import rospy
 import numpy as np
-from graphSLAM.helper_functions import update_sm_observations, update_odo_observations, \
-    filter_and_convert_gps_observations, update_gps_observations, update_aruco_observations
-from map.map import Map
+# from graphSLAM.helper_functions import update_sm_observations, update_odo_observations, \
+#     filter_and_convert_gps_observations, update_gps_observations, update_aruco_observations
+# from map.map import Map
 from nav_msgs.msg import Odometry
-from observations.gpsbuffer import GPSBuffer, GPSPosition
-from observations.lidarbuffer import LidarBuffer, LidarScan
-from observations.posesbuffer import PosesBuffer, Pose
-from scanmatcher.scanmatcher import ScanMatcher
+# from observations.gpsbuffer import GPSBuffer, GPSPosition
+# from observations.lidarbuffer import LidarBuffer, LidarScan
+# from observations.posesbuffer import PosesBuffer, Pose
+# from scanmatcher.scanmatcher import ScanMatcher
 from sensor_msgs.msg import NavSatFix, PointCloud2
-from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
+# from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from graphSLAM.graphSLAM import GraphSLAM
-from artelib.homogeneousmatrix import HomogeneousMatrix
-from artelib.vector import Vector
-from artelib.euler import Euler
-from config import PARAMETERS
-from tools.gpsconversions import gps2utm
+# from graphSLAM.graphSLAM import GraphSLAM
+# from artelib.homogeneousmatrix import HomogeneousMatrix
+# from artelib.vector import Vector
+# from artelib.euler import Euler
+# from config import PARAMETERS
+# from tools.gpsconversions import gps2utm
 
 fig1, ax1 = plt.subplots(figsize=(12, 8))
 ax1.set_title('SCANMATCHING path positions')
@@ -49,8 +49,6 @@ PRIOR_SM_GLOBAL_MAP_POSE = '/map_sm_global_pose'
 # INITIAL ESTIMATION POSE, this is the output of the run_graph_localizer algorithm
 LOCALIZED_POSE = '/localized_pose'
 
-        # rospy.Subscriber('/odometry_lidar_scanmatching', Odometry, self.odom_sm_callback)
-        # rospy.Subscriber('/gnss/fix', NavSatFix, self.gps_callback)
 
 
 class CheckTimestampsNode:

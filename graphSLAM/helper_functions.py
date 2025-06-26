@@ -166,7 +166,8 @@ def update_prior_map_observations(nodeloc):
         # add_prior_factor, this is the localization according to the map scanmatching node.
         nodeloc.graphslam.add_prior_factor(Trobot_prior, i, 'MAPSM')
         nodeloc.graphslam_observations_indices['MAPSM'].add(i)
-        nodeloc.last_processed_index['MAPSM'] = max(0, i - 5)
+        # caution, allowing for some search back in time!
+        nodeloc.last_processed_index['MAPSM'] = max(0, i - 15)
 
 
     # # loop through the received prior estimations.

@@ -28,6 +28,15 @@ class PosesBuffer():
     def __getitem__(self, index):
         return self.poses[index]
 
+    def read_data_tum(self, directory, filename):
+        full_filename = directory + filename
+        df = pd.read_csv(full_filename, names=['#timestamp [ns]', 'x', 'y', 'z', 'qx', 'qy', 'qz', 'qw'], sep=' ')
+        self.times = []  # df['#timestamp [ns]'].to_numpy()
+        self.poses = []
+        for index, row in df.iterrows():
+            self.times.append(row['#timestamp [ns]'])
+            self.poses.append(Pose(row))
+
     def read_data(self, directory, filename):
         """
         Caution: timestamps are stored in secs.
@@ -110,11 +119,11 @@ class PosesBuffer():
         """
         Find a Pose for timestamp, the one that is closets to timestamp.
         """
-        print('closes_pose_at_time!')
+        print('closest_pose_at_time!')
         idx1, t1, idx2, t2 = self.find_closest_times_around_t_bisect(timestamp)
         d1 = abs((timestamp - t1) / 1e9)
         d2 = abs((t2 - timestamp) / 1e9)
-        print('Time Odo time differences times: ', d1, d2)
+        # print('Time Odo time differences times: ', d1, d2)
         if (d1 > delta_threshold_s) and (d2 > delta_threshold_s):
             print('get_index_closest_to_time could not find any close time')
             return None
