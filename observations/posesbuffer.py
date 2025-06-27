@@ -115,22 +115,54 @@ class PosesBuffer():
         else:
             return idx2 #, t2
 
+    # def get_closest_pose_at_time(self, timestamp, delta_threshold_s=1.0):
+    #     """
+    #     Find a Pose for timestamp, the one that is closets to timestamp.
+    #     """
+    #     print('closest_pose_at_time!')
+    #     idx1, t1, idx2, t2 = self.find_closest_times_around_t_bisect(timestamp)
+    #     d1 = abs((timestamp - t1) / 1e9)
+    #     d2 = abs((t2 - timestamp) / 1e9)
+    #     # print('Time Odo time differences times: ', d1, d2)
+    #     if (d1 > delta_threshold_s) and (d2 > delta_threshold_s):
+    #         print('get_index_closest_to_time could not find any close time')
+    #         return None
+    #     if d1 <= d2:
+    #         return self.poses[idx1], t1
+    #     else:
+    #         return self.poses[idx2], t2
+
     def get_closest_pose_at_time(self, timestamp, delta_threshold_s=1.0):
         """
         Find a Pose for timestamp, the one that is closets to timestamp.
         """
-        print('closest_pose_at_time!')
-        idx1, t1, idx2, t2 = self.find_closest_times_around_t_bisect(timestamp)
-        d1 = abs((timestamp - t1) / 1e9)
-        d2 = abs((t2 - timestamp) / 1e9)
-        # print('Time Odo time differences times: ', d1, d2)
-        if (d1 > delta_threshold_s) and (d2 > delta_threshold_s):
-            print('get_index_closest_to_time could not find any close time')
-            return None
-        if d1 <= d2:
-            return self.poses[idx1], t1
+        if len(self.times) == 0:
+            print('get_closest_pose_at_time_fast. No poses in array.')
+            return None, None
+        idx = self.find_closest_index(timestamp=timestamp)
+        # print('len(self.times): ', len(self.times))
+        # print('idx is: ', idx)
+        retrieved_time = self.times[idx]
+        dt = abs(retrieved_time-timestamp)
+        # print('get_closest_pose_at_time_fast. Absolute time difference: ', dt)
+        if dt <= delta_threshold_s:
+            # print('REturning get closest pose at time: ', self.poses[idx], self.times[idx])
+            return self.poses[idx], self.times[idx]
+        return None, None
+
+    def find_closest_index(self, timestamp):
+        # Find the index where t would be inserted in sorted_times
+        idx = bisect.bisect_left(self.times, timestamp)
+        if idx == 0:
+            return 0
+        if idx == len(self.times):
+            return len(self.times)-1
+        before = self.times[idx-1]
+        after = self.times[idx]
+        if abs(after-timestamp) < abs(timestamp-before):
+            return idx
         else:
-            return self.poses[idx2], t2
+            return idx-1
 
     # def get_closest_pose_at_time(self, timestamp, delta_threshold_s=1):
     #     """

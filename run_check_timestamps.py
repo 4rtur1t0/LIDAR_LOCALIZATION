@@ -139,17 +139,17 @@ class CheckTimestampsNode:
             ax1.plot(odometry_times, marker='.', color='red', label='Tiempos odometria')
         odometry_scanmatching_times = np.array(self.odometry_scanmatching_times) - self.start_time
         if len(odometry_scanmatching_times) > 0:
-            ax1.plot(odometry_scanmatching_times, marker='.', color='green', label='Tiempos odometria scanmatching')
+            ax1.plot(odometry_scanmatching_times, marker='.', color='green', label='Tiempos local scanmatching')
         pcd_times = np.array(self.pcd_times)-self.start_time
         if len(pcd_times) > 0:
             ax1.plot(pcd_times, marker='.', color='blue', label='Pointcloud times')
         localized_pose_times = np.array(self.localized_pose_times) - self.start_time
         if len(localized_pose_times) > 0:
-            ax1.plot(localized_pose_times, marker='.', color='black', label='Localized pose times')
+            ax1.plot(localized_pose_times, marker='.', color='black', label='Localized pose times (LOCALIZATION)')
 
         prior_sm_gloal_map_pose_times = np.array(self.prior_sm_gloal_map_pose_times) - self.start_time
         if len(prior_sm_gloal_map_pose_times) > 0:
-            ax1.plot(prior_sm_gloal_map_pose_times, marker='.', color='yellow', label='Map pose localized')
+            ax1.plot(prior_sm_gloal_map_pose_times, marker='.', color='yellow', label='Map priors GLOBAL MAP scanmatching')
 
         ax1.legend()
         ax1.grid()

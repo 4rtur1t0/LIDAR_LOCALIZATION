@@ -80,8 +80,6 @@ class LocalizationROSNode:
         self.aruco_observations_buffer = PosesBuffer(maxlen=5000)
         self.aruco_observations_ids = deque(maxlen=5000)
 
-        # the lidar buffer
-        # self.pcdbuffer = LidarBuffer(maxlen=30)
 
         self.skip_optimization = 5
         self.current_key = 0
@@ -170,6 +168,7 @@ class LocalizationROSNode:
         pose = Pose()
         pose.from_message(msg.pose.pose)
         self.odom_sm_buffer.append(pose, timestamp)
+        update_sm_observations(self)
 
     def map_sm_global_pose_callback(self, msg):
         """
@@ -180,6 +179,7 @@ class LocalizationROSNode:
         pose = Pose()
         pose.from_message(msg.pose.pose)
         self.map_sm_prior_buffer.append(pose, timestamp)
+        update_prior_map_observations(self)
 
     def gps_callback(self, msg):
         """
@@ -214,15 +214,15 @@ class LocalizationROSNode:
         These observations can be integrated in the graph with some delay in time.
         """
         start_time = time.time()
-        print('UPDATE OBSERVATIONS!! SM, ODO, GPS')
-        update_sm_observations(self)
+        # print('UPDATE OBSERVATIONS!! SM, ODO, GPS')
+        # update_sm_observations(self)
         # caution, called from the callback at each odometry
         # new states are created using odometry and scanmatching odometry is added as a restriction
         # update_odo_observations(self)
         # update_gps_observations(self)
         # add the prior observations with respect to the map. I.e. the localization found in the other node:
         # scanmatcher_to_map
-        update_prior_map_observations(self)
+        # update_prior_map_observations(self)
         # update_aruco_observations(self)
 
         if self.optimization_index % self.skip_optimization == 0:
@@ -247,7 +247,6 @@ class LocalizationROSNode:
         end_time = time.time()
         print(f"update_graph_timer_callback time:, {end_time - start_time:.4f} seconds")
         self.update_graph_timer_callback_times.append(end_time - start_time)
-
 
     def publish_graph(self):
         """

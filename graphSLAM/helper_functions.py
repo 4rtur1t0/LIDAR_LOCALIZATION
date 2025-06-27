@@ -60,6 +60,7 @@ def update_sm_observations(nodeloc):
     SM observations create relationships between states. The creation of new nodes in the graph is done
     with the odometry, which is faster.
     """
+    delta_threshold_s = PARAMETERS.config.get('graphslam').get('delta_threshold_s')
     print('UPDATING with last SM observations')
     if len(nodeloc.odom_sm_buffer) == 0:
         print("\033[91mCaution!!! No odometry SM in buffer yet.\033[0m")
@@ -77,8 +78,11 @@ def update_sm_observations(nodeloc):
     for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times) - 1):
         time_graph1 = nodeloc.graphslam_times[i]
         time_graph2 = nodeloc.graphslam_times[i + 1]
-        smodoi, _ = nodeloc.odom_sm_buffer.interpolated_pose_at_time(time_graph1)
-        smodoj, _ = nodeloc.odom_sm_buffer.interpolated_pose_at_time(time_graph2)
+        # getting the closest pose in scanmatching
+        # smodoi, _ = nodeloc.odom_sm_buffer.interpolated_pose_at_time(time_graph1, delta_threshold_s=delta_threshold_s)
+        # smodoj, _ = nodeloc.odom_sm_buffer.interpolated_pose_at_time(time_graph2, delta_threshold_s=delta_threshold_s)
+        smodoi, _ = nodeloc.odom_sm_buffer.get_closest_pose_at_time(timestamp=time_graph1, delta_threshold_s=delta_threshold_s)
+        smodoj, _ = nodeloc.odom_sm_buffer.get_closest_pose_at_time(timestamp=time_graph2, delta_threshold_s=delta_threshold_s)
         if smodoi is None or smodoj is None:
             print('NO SMODO FOR these graphslam nodes, SKIPPING')
             continue
@@ -147,49 +151,32 @@ def update_prior_map_observations(nodeloc):
     if len(nodeloc.graphslam_times) == 0:
         print("\033[91mCaution!!! No graph yet.\033[0m")
         return
-
+    print('UPDATING with last GLOBAL SCANMATCHING MAPSM observations')
+    delta_threshold_s = PARAMETERS.config.get('graphslam').get('delta_threshold_s')
     # iterate from the last processed index in the graph, look for GPS and add them to the graph
     first_index_in_graphslam = nodeloc.last_processed_index['MAPSM']
     # running through the nodes of the graph (non visited yet). Looking for gps observations at that time
     for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times)):
-    # for i in range(0, len(nodeloc.graphslam_times)):
         # get the corresponding time
         timestamp_i_in_graphslam = nodeloc.graphslam_times[i]
 
         # find the interpolation that corresponds to that particular time in the graph
-        prior_i, _ = nodeloc.map_sm_prior_buffer.interpolated_pose_at_time(timestamp_i_in_graphslam,
-                                                                        delta_threshold_s=3.0)
+        # prior_i, _ = nodeloc.map_sm_prior_buffer.interpolated_pose_at_time(timestamp_i_in_graphslam,
+        #                                                                 delta_threshold_s=3.0)
+
+        prior_i, _ = nodeloc.map_sm_prior_buffer.get_closest_pose_at_time(timestamp=timestamp_i_in_graphslam,
+                                                                          delta_threshold_s=delta_threshold_s)
+
         if prior_i is None:
-            print('No estimation found')
+            # print('No estimation found')
             continue
         Trobot_prior = prior_i.T()
         # add_prior_factor, this is the localization according to the map scanmatching node.
         nodeloc.graphslam.add_prior_factor(Trobot_prior, i, 'MAPSM')
         nodeloc.graphslam_observations_indices['MAPSM'].add(i)
         # caution, allowing for some search back in time!
-        nodeloc.last_processed_index['MAPSM'] = max(0, i - 15)
-
-
-    # # loop through the received prior estimations.
-    # # add them to the graph
-    # # caution: all the observations have to be processed
-    # # first_index = nodeloc.last_processed_index['MAPSM']
-    # # for i in range(first_index, len(nodeloc.map_sm_prior_buffer)):
-    # for i in range(len(nodeloc.map_sm_prior_buffer)):
-    #     index_graph_i = int(nodeloc.map_sm_prior_buffer_index[i])
-    #     # if the index in the graph has been processed: do not repeat.
-    #     if index_graph_i in nodeloc.graphslam_observations_indices['MAPSM']:
-    #         continue
-    #     prior_i = nodeloc.map_sm_prior_buffer[i]
-    #     Trobot_prior = prior_i.T()
-    #     # add_prior_factor, this is the localization according to the map scanmatching node.
-    #     nodeloc.graphslam.add_prior_factor(Trobot_prior, index_graph_i, 'MAPSM')
-    #     nodeloc.graphslam_observations_indices['MAPSM'].add(index_graph_i)
-        # nodeloc.last_processed_index['MAPSM'] = i + 1
-
-    # for i in range(k):
-    #     nodeloc.map_sm_prior_buffer.popleft()
-    #     nodeloc.map_sm_prior_buffer_index.pop()
+        # nodeloc.last_processed_index['MAPSM'] = max(0, i - 15)
+        nodeloc.last_processed_index['MAPSM'] = i
     nodeloc.optimization_index += 1
 
 def update_aruco_observations(nodeloc):

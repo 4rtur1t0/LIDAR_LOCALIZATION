@@ -10,16 +10,22 @@ gps:
 odo:
   delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
 
-aruco:
-  delta_threshold_s: 0.05 # max time distance to associate aruco observations to a state (with a lidar time)
-  sigma_alpha: 2 # sigma for an ARUCO measurement. sigma degrees in the three angle rotations
-  sigma_xy: 0.05 # sigma for an ARUCO measurement. sigma meters for xy
-  sigma_z: 0.1 # sigma for an ARUCO measurement. sigma degrees in the three angle rotations
+graphslam:
+  delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
+#aruco:
+#  delta_threshold_s: 0.05 # max time distance to associate aruco observations to a state (with a lidar time)
+#  sigma_alpha: 2 # sigma for an ARUCO measurement. sigma degrees in the three angle rotations
+#  sigma_xy: 0.05 # sigma for an ARUCO measurement. sigma meters for xy
+#  sigma_z: 0.1 # sigma for an ARUCO measurement. sigma degrees in the three angle rotations
 
 # the scanmatcher is used for sequential scanmatching and to find registrations between non-consecutive pointclouds
 scanmatcher:
   d_poses: 0.3
   th_poses: 0.2
+
+  # max time distance to find a valid odometry interpolation (given the lidar time, find odo)
+  # a warning is issued and no odometry is interpolated
+  delta_threshold_s: 1.0
 
   voxel_size: 0.05 # Number or null
 #  voxel_size: 0.2
@@ -44,9 +50,7 @@ scanmatcher:
     clouds_at_same_z: true
     # a delay in seconds to synchronize odometry and lidar info
     delay_seconds_lidar_odometry: 0.2
-    # max time distance to find a valid odometry interpolation (given the lidar time, find odo)
-    # a warning is issued and no odometry is interpolated
-    delta_threshold_s: 0.15
+
 
   threads:
     # process scanmatching between pointclouds every 0.35 seconds

@@ -130,7 +130,6 @@ class ScanmatchingNode:
             self.publish_pose(Tg, timestamp=timestamp)
         return
 
-
     def publish_pose(self, T, timestamp):
         """
         Publishing the global transform of the scanmatching at that time.
@@ -201,7 +200,7 @@ class ScanmatchingNode:
 
     def perform_local_scanmatching(self, msg):
         start = time.time()
-        delta_threshold_s = PARAMETERS.config.get('scanmatcher').get('initial_transform').get('delta_threshold_s')
+        delta_threshold_s = PARAMETERS.config.get('scanmatcher').get('delta_threshold_s')
         voxel_size = PARAMETERS.config.get('scanmatcher').get('voxel_size')
         voxel_size_normals = PARAMETERS.config.get('scanmatcher').get('normals').get('voxel_size_normals')
         max_nn_normals = PARAMETERS.config.get('scanmatcher').get('normals').get('max_nn_normals')
@@ -210,7 +209,7 @@ class ScanmatchingNode:
 
         self.time_diffs.append(timestamp - self.odombuffer.times[-1])
 
-        if len(self.odombuffer.times) < 2:
+        if len(self.odombuffer.times) == 0:
             print('Received pointcloud but no odometry yet. Waiting for odometry')
             return
 
@@ -222,7 +221,7 @@ class ScanmatchingNode:
             # this may happen only when the system is startting and no odometry readings exist
             if odo_ti is None:
                 print('No corresponding odo_ti found, skipping')
-                print(100 * "odo_ti error")
+                print(10 * "odo_tI error")
                 # time.sleep(self.time_sleep_synchro)
                 # self.time_sleep_synchro += 0.5
                 return
@@ -236,8 +235,8 @@ class ScanmatchingNode:
             T0 = HomogeneousMatrix()
             # adding global transform and pcd
             self.global_transforms.append((T0, timestamp))
-            self.publish_pose(T0, timestamp=timestamp)
-            return None
+            # self.publish_pose(T0, timestamp=timestamp)
+            return T0
 
         # read the newly received pointcloud odometry
         odo_tj, _ = self.odombuffer.get_closest_pose_at_time(timestamp=timestamp, delta_threshold_s=delta_threshold_s)
@@ -245,7 +244,7 @@ class ScanmatchingNode:
         #                                                       delta_threshold_s=delta_threshold_s)
         if odo_tj is None:
             print('Caution: no interpolated odometry odo_tj found')
-            print(100*"odo_tj error")
+            print(10*"odo_tJ error")
             # time.sleep(self.time_sleep_synchro)
             # self.time_sleep_synchro+=0.5
             return None
