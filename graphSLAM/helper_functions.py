@@ -42,6 +42,7 @@ def update_odo_observations(nodeloc, pose, timestamp):
     print('Current key is: ', nodeloc.current_key)
     if nodeloc.graphslam.check_estimate(nodeloc.current_key) is False:
         print('DETECTED NON EXISTENT current_key')
+        print('REDUCING current_key AND TRYING TO CREATE ANOTHER ONE')
         print(300*'&')
         nodeloc.current_key -= 1
 
