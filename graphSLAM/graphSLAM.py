@@ -48,12 +48,12 @@ SM_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([icp_rpy_sigma*np.pi/180,
                                                             icp_xyz_sigma,
                                                             icp_xyz_sigma]))
 # the noise is twice as big
-MAPSM_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([3*icp_rpy_sigma*np.pi/180,
-                                                            3*icp_rpy_sigma*np.pi/180,
-                                                            3*icp_rpy_sigma*np.pi/180,
-                                                            3*icp_xyz_sigma,
-                                                            3*icp_xyz_sigma,
-                                                            3*icp_xyz_sigma]))
+MAPSM_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([15*icp_rpy_sigma*np.pi/180,
+                                                            15*icp_rpy_sigma*np.pi/180,
+                                                            15*icp_rpy_sigma*np.pi/180,
+                                                            50*icp_xyz_sigma,
+                                                            50*icp_xyz_sigma,
+                                                            50*icp_xyz_sigma]))
 
 ODO_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([odo_rpy_sigma*np.pi/180,
                                                             odo_rpy_sigma*np.pi/180,
@@ -105,10 +105,19 @@ class GraphSLAM():
         # self.current_estimate = self.initial_estimate
         self.current_estimate.insert(X(0), gtsam.Pose3(T.array))
 
+    def check_estimate(self, i):
+        print("X(i) exists?: ", i)
+        print(self.current_estimate.exists(X(i)))
+        if self.current_estimate.exists(X(i)):
+            print(self.current_estimate.atPose3(X(i)))
+            return True
+        return False
+
     def add_initial_estimate(self, atb, k):
         next_estimate = self.current_estimate.atPose3(X(k-1)).compose(gtsam.Pose3(atb.array))
         self.initial_estimate.insert(X(k), next_estimate)
         self.current_estimate.insert(X(k), next_estimate)
+
 
     def add_initial_landmark_estimate(self, atb, k, landmark_id):
         """

@@ -133,11 +133,12 @@ class CheckTimestampsNode:
 
     def plot_timer_callback(self, event):
         print('Plotting info')
+        delta_see = 1
         ax1.clear()
         odometry_times = np.array(self.odometry_times)-self.start_time
         if len(odometry_times) > 0:
             ax1.plot(odometry_times, marker='.', color='red', label='Tiempos odometria')
-        odometry_scanmatching_times = np.array(self.odometry_scanmatching_times) - self.start_time
+        odometry_scanmatching_times = np.array(self.odometry_scanmatching_times) - self.start_time - delta_see
         if len(odometry_scanmatching_times) > 0:
             ax1.plot(odometry_scanmatching_times, marker='.', color='green', label='Tiempos local scanmatching')
         pcd_times = np.array(self.pcd_times)-self.start_time

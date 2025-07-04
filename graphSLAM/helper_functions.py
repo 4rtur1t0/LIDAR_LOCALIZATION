@@ -13,27 +13,21 @@ def update_odo_observations(nodeloc, pose, timestamp):
     # integrate ODOMETRY measurements (interpolated)
     # find first odometry time
     #################################################
-    # if len(nodeloc.odom_buffer) == 0:
-    #     print("\033[91mCaution!!! No odometry in buffer yet.\033[0m")
-    #     return
     if nodeloc.last_odom_pose is None:
         print("\033[91mCaution!!! No odometry received yet.\033[0m")
         return
-    # first_index_in_graphslam = nodeloc.last_processed_index['ODO']
+    # check distance from the last odometry
     odo_ti = nodeloc.last_odom_pose
     odo_tj = pose
     # if the distance is larger or the angle is larger that... add pcd to buffer
-    # d_poses = PARAMETERS.config.get('scanmatcher').get('d_poses')
-    # th_poses = PARAMETERS.config.get('scanmatcher').get('th_poses')
+    d_poses = PARAMETERS.config.get('graphslam').get('d_poses')
+    th_poses = PARAMETERS.config.get('graphslam').get('th_poses')
     # Now, only add another pointcloud if the odometry is significantly moved
     d, th = compute_rel_distance(odo_ti, odo_tj)
-    if d < 0.2 and th < 0.1:
-        # print('Not enough distance traveled. ')
-        # print('No new nodes created in graph.')
+    if d < d_poses and th < th_poses:
+        print('(d, th): ', d, th)
         return
     print('Adding ODO STATE AND EDGES to the graph')
-    print(50*'?')
-    # for i in range(len(nodeloc.odo_buffer) - 1):
     print('Tiempo odometry', timestamp)
     Ti = nodeloc.last_odom_pose.T()
     Tj = pose.T()
@@ -41,17 +35,25 @@ def update_odo_observations(nodeloc, pose, timestamp):
     print(50*'*')
     print('Print creating new state from ODO: (', nodeloc.current_key + 1, ')')
     print('Adding Graphslam INITIAL ODO edge: (', nodeloc.current_key, ',', nodeloc.current_key + 1, ')')
+    print('Adding relative transformation: ')
+    Tij.print_nice()
     print(50 * '*')
+
+    print('Current key is: ', nodeloc.current_key)
+    if nodeloc.graphslam.check_estimate(nodeloc.current_key) is False:
+        print('DETECTED NON EXISTENT current_key')
+        print(300*'&')
+        nodeloc.current_key -= 1
+
     nodeloc.graphslam.add_initial_estimate(Tij, nodeloc.current_key + 1)
     nodeloc.graphslam.add_edge(Tij, nodeloc.current_key, nodeloc.current_key + 1, 'ODO')
+    nodeloc.current_key += 1
     # append the index to the observation indices
     nodeloc.graphslam_observations_indices['ODO'].append(nodeloc.current_key)
     nodeloc.graphslam_times = np.append(nodeloc.graphslam_times, timestamp)
-    # increment the current_key in graphslam (the next state)
-    nodeloc.current_key += 1
     # reset pose
     nodeloc.last_odom_pose = pose
-    nodeloc.optimization_index += 1
+
 
 
 def update_sm_observations(nodeloc):
@@ -60,12 +62,12 @@ def update_sm_observations(nodeloc):
     SM observations create relationships between states. The creation of new nodes in the graph is done
     with the odometry, which is faster.
     """
-    delta_threshold_s = PARAMETERS.config.get('graphslam').get('delta_threshold_s')
+    # delta_threshold_s = PARAMETERS.config.get('graphslam').get('delta_threshold_s')
     print('UPDATING with last SM observations')
     if len(nodeloc.odom_sm_buffer) == 0:
         print("\033[91mCaution!!! No odometry SM in buffer yet.\033[0m")
         return
-    if len(nodeloc.graphslam_times) == 0:
+    if nodeloc.current_key == 0:
         print("\033[91mCaution!!! No graph yet.\033[0m")
         return
     ############################################
@@ -75,16 +77,21 @@ def update_sm_observations(nodeloc):
     first_index_in_graphslam = nodeloc.last_processed_index['ODOSM']
     # given the last processed index in the graph. We iteratively follow
     # the rest of the nodes and try to include Scanmatching edge relations
-    for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times) - 1):
+    # for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times) - 1):
+    # for i in range(first_index_in_graphslam, nodeloc.current_key-1):
+    for i in range(first_index_in_graphslam, nodeloc.current_key - 1):
         time_graph1 = nodeloc.graphslam_times[i]
         time_graph2 = nodeloc.graphslam_times[i + 1]
         # getting the closest pose in scanmatching
-        # smodoi, _ = nodeloc.odom_sm_buffer.interpolated_pose_at_time(time_graph1, delta_threshold_s=delta_threshold_s)
-        # smodoj, _ = nodeloc.odom_sm_buffer.interpolated_pose_at_time(time_graph2, delta_threshold_s=delta_threshold_s)
-        smodoi, _ = nodeloc.odom_sm_buffer.get_closest_pose_at_time(timestamp=time_graph1, delta_threshold_s=delta_threshold_s)
-        smodoj, _ = nodeloc.odom_sm_buffer.get_closest_pose_at_time(timestamp=time_graph2, delta_threshold_s=delta_threshold_s)
+        # working
+        # smodoi, _ = nodeloc.odom_sm_buffer.get_closest_pose_at_time(timestamp=time_graph1, delta_threshold_s=delta_threshold_s)
+        # smodoj, _ = nodeloc.odom_sm_buffer.get_closest_pose_at_time(timestamp=time_graph2, delta_threshold_s=delta_threshold_s)
+        smodoi, _, case_typei = nodeloc.odom_sm_buffer.interpolated_pose_at_time_new(timestamp=time_graph1)
+        smodoj, _, case_typej = nodeloc.odom_sm_buffer.interpolated_pose_at_time_new(timestamp=time_graph2)
+        if case_typei < 2 or case_typej < 2:
+            continue
         if smodoi is None or smodoj is None:
-            print('NO SMODO FOR these graphslam nodes, SKIPPING')
+            # print('NO SMODO FOR these graphslam nodes, SKIPPING')
             continue
         print('Tiempo odometro scanmatcher', time_graph1 - nodeloc.start_time)
         Ti = smodoi.T()
@@ -152,21 +159,24 @@ def update_prior_map_observations(nodeloc):
         print("\033[91mCaution!!! No graph yet.\033[0m")
         return
     print('UPDATING with last GLOBAL SCANMATCHING MAPSM observations')
-    delta_threshold_s = PARAMETERS.config.get('graphslam').get('delta_threshold_s')
+    # delta_threshold_s = PARAMETERS.config.get('graphslam').get('delta_threshold_s')
     # iterate from the last processed index in the graph, look for GPS and add them to the graph
     first_index_in_graphslam = nodeloc.last_processed_index['MAPSM']
     # running through the nodes of the graph (non visited yet). Looking for gps observations at that time
-    for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times)):
+    # for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times)):
+    # for i in range(first_index_in_graphslam, nodeloc.current_key):
+    for i in range(first_index_in_graphslam, nodeloc.current_key):
         # get the corresponding time
         timestamp_i_in_graphslam = nodeloc.graphslam_times[i]
-
         # find the interpolation that corresponds to that particular time in the graph
+        # prior_i, _ = nodeloc.map_sm_prior_buffer.get_closest_pose_at_time(timestamp=timestamp_i_in_graphslam,
+        #                                                                   delta_threshold_s=delta_threshold_s)
+
         # prior_i, _ = nodeloc.map_sm_prior_buffer.interpolated_pose_at_time(timestamp_i_in_graphslam,
-        #                                                                 delta_threshold_s=3.0)
-
-        prior_i, _ = nodeloc.map_sm_prior_buffer.get_closest_pose_at_time(timestamp=timestamp_i_in_graphslam,
-                                                                          delta_threshold_s=delta_threshold_s)
-
+        #                                                                   delta_threshold_s=delta_threshold_s)
+        prior_i, _, case_type = nodeloc.map_sm_prior_buffer.interpolated_pose_at_time_new(timestamp_i_in_graphslam)
+        if case_type < 2:
+            continue
         if prior_i is None:
             # print('No estimation found')
             continue
@@ -175,8 +185,8 @@ def update_prior_map_observations(nodeloc):
         nodeloc.graphslam.add_prior_factor(Trobot_prior, i, 'MAPSM')
         nodeloc.graphslam_observations_indices['MAPSM'].add(i)
         # caution, allowing for some search back in time!
-        # nodeloc.last_processed_index['MAPSM'] = max(0, i - 15)
-        nodeloc.last_processed_index['MAPSM'] = i
+        nodeloc.last_processed_index['MAPSM'] = i #max(0, i - 100)
+        # nodeloc.last_processed_index['MAPSM'] = i
     nodeloc.optimization_index += 1
 
 def update_aruco_observations(nodeloc):

@@ -12,11 +12,9 @@ odo:
 
 graphslam:
   delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
-#aruco:
-#  delta_threshold_s: 0.05 # max time distance to associate aruco observations to a state (with a lidar time)
-#  sigma_alpha: 2 # sigma for an ARUCO measurement. sigma degrees in the three angle rotations
-#  sigma_xy: 0.05 # sigma for an ARUCO measurement. sigma meters for xy
-#  sigma_z: 0.1 # sigma for an ARUCO measurement. sigma degrees in the three angle rotations
+  #cte a new state whenever the odometry moves more than these thresholds
+  d_poses: 0.3
+  th_poses: 0.15
 
 # the scanmatcher is used for sequential scanmatching and to find registrations between non-consecutive pointclouds
 scanmatcher:
@@ -62,39 +60,4 @@ scanmatcher:
     seconds_period_plot_info_thread: 1.0
 
 
-
-#loop_closing:
-#  # lazy settings, low number of loop closings
-#  d_sample_i: 10.0 # try to find triplets for this relative distance between i poses
-#  r_close1: 0.7 # the j index must be within r1 and r2 in travel distance
-#  r_close2: 1.5
-#  # include indices k that are within r_lc from i (and approximately from j) and r_lc_travel distance from i in terms
-#  # of travel distance.
-#  r_lc: 3.0 # radius for loop_closing (not travel distance)
-#  r_lc_travel_distance: 3.0 # travelled distance for loop closings
-#  num_triplets: 1 # num of triplets generated for each triplet at every step index
-
-## medium settings, large number of loop closings, including
-#  d_sample_i: 5.0 # try to find triplets for this relative distance between i poses
-#  r_close1: 0.7 # the j index must be within r1 and r2 in travel distance
-#  r_close2: 1.5
-#  # include indices k that are within r_lc from i (and approximately from j) and r_lc_travel distance from i in terms
-#  # of travel distance.
-#  r_lc: 3.5 # radius for loop_closing (not travel distance)
-#  r_lc_travel_distance: 3.0 # travelled distance for loop closings
-#  num_triplets: 3 # num of triplets generated for each triplet at every step index
-
-# epic settings, large number of loop closings, including
-#  d_sample_i: 2.0 # try to find triplets for this relative distance between i poses
-#  r_close1: 0.7 # the j index must be within r1 and r2 in travel distance
-#  r_close2: 1.5
-#   include indices k that are within r_lc from i (and approximately from j) and r_lc_travel distance from i in terms
-#   of travel distance.
-#  r_lc: 4.5 # radius for loop_closing (not travel distance)
-#  r_lc_travel_distance: 3.0 # travelled distance for loop closings
-#  num_triplets: 5 # num of triplets generated for each triplet at every step index
-
-#map_viewer:
-#  voxel_size: 0.2
-#  keyframe_sampling: 20
 

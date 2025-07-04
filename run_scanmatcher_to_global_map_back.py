@@ -131,10 +131,9 @@ class GlobalMap():
 class GlobalScanMatchingROSNode:
     def __init__(self):
         self.start_time = None
-        # store the localized pose in deque fashion
+        # store odometry in deque fashion
         self.localized_pose_buffer = PosesBuffer(maxlen=5000)
-        # store the received pointclouds
-        self.lidar_queue = deque(maxlen=20)
+
         # LOAD THE MAP
         print('Loading MAP')
         self.global_map = GlobalMap(map_directory=MAP_DIRECTORY, map_filename='global_map.pcd')
@@ -155,10 +154,7 @@ class GlobalScanMatchingROSNode:
         # subscription to the current localized pose
         rospy.Subscriber(INITIAL_ESTIMATED_POSE, Odometry, self.localized_pose_callback)
 
-        # Set up a timer to localize periodically the robot on the global map, given an initial global estimation
-        # rospy.Timer(rospy.Duration(1), self.timer_process_localization_callback)
-
-        # Set up a timer to periodically update the png plots
+        # Set up a timer to periodically update the graph
         rospy.Timer(rospy.Duration(5), self.plot_timer_callback)
         # Publisher
         self.pub = rospy.Publisher(MAP_SM_GLOBAL_POSE_TOPIC, Odometry, queue_size=10)
@@ -171,33 +167,32 @@ class GlobalScanMatchingROSNode:
         self.times_pose_buffer = []
         self.diff_times_pcd_pose = []
 
+        self.lidar_array = deque()
+
     def pc_callback(self, msg):
         """
         Get last pcd reading and try to localize it
         """
-        # start_time = time.time()
+        start_time = time.time()
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
             self.start_time = timestamp
         print('Received pointcloud')
-        pcd = LidarScan(time=timestamp, pose=None)
-        pcd.load_pointcloud_from_msg(msg=msg)
-        self.lidar_queue.append(pcd)
-        # try:
-        #     pcd = LidarScan(time=timestamp, pose=None)
-        #     pcd.load_pointcloud_from_msg(msg=msg)
-        #     self.lidar_queue.append(pcd)
-        #     # given the current /localized_pose, refine this information by
-        #     # registering the current scan against the global map.
-        #     self.compute_global_scanmatching(pcd, timestamp_pcd=timestamp)
-        #     end_time = time.time()
-        #     print(30 * '+')
-        #     print('Received and loaded pointcloud')
-        #     print(f"pc_callback time:, {end_time - start_time:.4f} seconds")
-        #     print(30 * '+')
-        # except:
-        #     print('Exception captured in compute_global_scanmatching!!!')
-        #     pass
+        try:
+            pcd = LidarScan(time=timestamp, pose=None)
+            pcd.load_pointcloud_from_msg(msg=msg)
+
+            # given the current /localized_pose, refine this information by
+            # registering the current scan against the global map.
+            self.compute_global_scanmatching(pcd, timestamp_pcd=timestamp)
+            end_time = time.time()
+            print(30 * '+')
+            print('Received and loaded pointcloud')
+            print(f"pc_callback time:, {end_time - start_time:.4f} seconds")
+            print(30 * '+')
+        except:
+            print('Exception captured in compute_global_scanmatching!!!')
+            pass
         return
 
     def localized_pose_callback(self, msg):
@@ -208,56 +203,16 @@ class GlobalScanMatchingROSNode:
             the last localization with all the information, excluding
             the localization with respec to the map.
         """
+        print(50*'_')
         print('Received localized pose!!!')
+        print('localized_pose_buffer size: ', len(self.localized_pose_buffer))
+        print(50 * '_')
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
             self.start_time = timestamp
         pose = Pose()
         pose.from_message(msg.pose.pose)
-        # append data to buffer
         self.localized_pose_buffer.append(pose, timestamp)
-        # try to locate a pcd within the last two received poses
-        self.find_and_localize()
-
-    def find_and_localize(self):
-        """
-            Obtain the last estimations on the robot path
-            This /localized_pose is used as an initial estimation and usually obtained from the localization node itself.
-            This should be the /localized_pose topic, which maintains
-            the last localization with all the information, excluding
-            the localization with respec to the map.
-        """
-        print(50 * '_')
-        print('Calling global localization method!!!')
-        print('localized_pose_buffer size: ', len(self.localized_pose_buffer))
-        print('lidar_queue size: ', len(self.lidar_queue))
-        print(50 * '_')
-        if len(self.localized_pose_buffer) < 2:
-            print('Did not receive enough localized initial poses')
-            return
-        ta = self.localized_pose_buffer.times[-2]
-        tb = self.localized_pose_buffer.times[-1]
-        pcdini = self.lidar_queue[0]
-        pcdend = self.lidar_queue[-1]
-        print('Last two times localized pose: ', ta-self.start_time, tb-self.start_time)
-        print('Times buffer lidar buffer: ', pcdini.time - self.start_time, pcdend.time - self.start_time)
-        # print('Diff time localized buffer - pcd buffer end: ', tend-pcdend.time)
-        print(50 * '_')
-
-        N = len(self.lidar_queue)
-        # try to localize on a buffer of saved pcds
-        for i in range(N):
-            print(20 * '+')
-            print('In queue, processing in temporal buffer for pcds: ', i)
-            # caution, looking on the right, the last
-            pcd = self.lidar_queue[i]
-            timestamp_pcd = pcd.time
-            # cannot localize in this case
-            if ta < timestamp_pcd < tb:
-                print('continue timestamp_pcd < tini')
-                # try to localize the last received pose
-                res = self.compute_global_scanmatching(pcd, timestamp_pcd=timestamp_pcd)
-                break
 
     def compute_global_scanmatching(self, pcd, timestamp_pcd):
         """
@@ -284,7 +239,7 @@ class GlobalScanMatchingROSNode:
         start = time.time()
         if len(self.localized_pose_buffer) == 0:
             print("\033[91mCaution!!! No initial /localized_pose received yet.\033[0m")
-            return False
+            return
         # difference, pcd last localized pose
         # diff = timestamp_pcd - self.localized_pose_buffer.times[-1]
         # self.diff_times_pcd_pose.append(diff)
@@ -297,22 +252,22 @@ class GlobalScanMatchingROSNode:
         # posei, timestampi = self.localized_pose_buffer.get_closest_pose_at_time(timestamp=timestamp_pcd,
         #                                                                         delta_threshold_s=DELTA_THRESHOLD_S)
         # this is needed to find localized_pose measurements corresponding to the last received pointcloud
-        # hz = 4
+        hz = 4
         # queue_size=3
-        # time_to_wait = (1/hz)
+        time_to_wait = (1/hz)
         if posei is None:
             print('Caution: no initial estimation found por pcd')
             print('Waiting need a delay')
             print(30*'ERROR posei ')
-            # rospy.wait_for_message(INITIAL_ESTIMATED_POSE, Odometry)
-            return False
+            rospy.wait_for_message(INITIAL_ESTIMATED_POSE, Odometry)
+            return
         # we are on the edge! must wait till case_type==2
         if (case_type == 0) or (case_type == 1):
             print("FIRST ELEMENT OR LAST ELEMENT INTERPOLATION DETECTED. SLEEPING")
             # since we are on the rigth of the queue of initial estimated poses,
             # we wait till the next one and wait for more pcds to stay at the queue
-            # rospy.wait_for_message(INITIAL_ESTIMATED_POSE, Odometry)
-            return False
+            rospy.wait_for_message(INITIAL_ESTIMATED_POSE, Odometry)
+            return
 
         # the initial estimation at that time is:
         T0i = posei.T()
@@ -329,8 +284,7 @@ class GlobalScanMatchingROSNode:
         self.all_refined_estimations.append(T0i_)
         end = time.time()
         print('TOTAL TIME FOR GLOBAL LOALIZATION: ', end-start)
-        #success
-        return True
+        return
 
     def publish_prior_information_pose(self, T, timestamp):
         """

@@ -216,8 +216,9 @@ class ScanmatchingNode:
         if self.pcd1 is None:
             # odo_ti, _ = self.odombuffer.interpolated_pose_at_time(timestamp=timestamp,
             #                                                       delta_threshold_s=delta_threshold_s)
-            odo_ti, _ = self.odombuffer.get_closest_pose_at_time(timestamp=timestamp,
-                                                                 delta_threshold_s=delta_threshold_s)
+            # WORKING odo_ti, _ = self.odombuffer.get_closest_pose_at_time(timestamp=timestamp,
+            #                                                     delta_threshold_s=delta_threshold_s)
+            odo_ti, _, _ = self.odombuffer.interpolated_pose_at_time_new(timestamp=timestamp)
             # this may happen only when the system is startting and no odometry readings exist
             if odo_ti is None:
                 print('No corresponding odo_ti found, skipping')
@@ -239,9 +240,10 @@ class ScanmatchingNode:
             return T0
 
         # read the newly received pointcloud odometry
-        odo_tj, _ = self.odombuffer.get_closest_pose_at_time(timestamp=timestamp, delta_threshold_s=delta_threshold_s)
+        # odo_tj, _ = self.odombuffer.get_closest_pose_at_time(timestamp=timestamp, delta_threshold_s=delta_threshold_s)
         # odo_tj, _ = self.odombuffer.interpolated_pose_at_time(timestamp=timestamp,
         #                                                       delta_threshold_s=delta_threshold_s)
+        odo_tj, _, _ = self.odombuffer.interpolated_pose_at_time_new(timestamp=timestamp)
         if odo_tj is None:
             print('Caution: no interpolated odometry odo_tj found')
             print(10*"odo_tJ error")

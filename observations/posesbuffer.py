@@ -115,22 +115,6 @@ class PosesBuffer():
         else:
             return idx2 #, t2
 
-    # def get_closest_pose_at_time(self, timestamp, delta_threshold_s=1.0):
-    #     """
-    #     Find a Pose for timestamp, the one that is closets to timestamp.
-    #     """
-    #     print('closest_pose_at_time!')
-    #     idx1, t1, idx2, t2 = self.find_closest_times_around_t_bisect(timestamp)
-    #     d1 = abs((timestamp - t1) / 1e9)
-    #     d2 = abs((t2 - timestamp) / 1e9)
-    #     # print('Time Odo time differences times: ', d1, d2)
-    #     if (d1 > delta_threshold_s) and (d2 > delta_threshold_s):
-    #         print('get_index_closest_to_time could not find any close time')
-    #         return None
-    #     if d1 <= d2:
-    #         return self.poses[idx1], t1
-    #     else:
-    #         return self.poses[idx2], t2
 
     def get_closest_pose_at_time(self, timestamp, delta_threshold_s=1.0):
         """
@@ -164,29 +148,49 @@ class PosesBuffer():
         else:
             return idx-1
 
-    # def get_closest_pose_at_time(self, timestamp, delta_threshold_s=1):
-    #     """
-    #     Find a Pose for timestamp, the one that is closets to timestamp.
-    #     """
-    #     print('closes_pose_at_time!')
-    #     # Find the index where t would be inserted in sorted_times
-    #     idx = bisect.bisect_left(self.times, timestamp)
-    #     if idx == 0:
-    #         # t is before the first element
-    #         return 0, self.times[0], 1, self.times[1]
-    #     elif idx == len(self.times):
-    #         # t is after the last element
-    #         return -2, self.times[-2], -1, self.times[-1]
-    #     else:
-    #         # Take the closest two times around t
-    #         return idx-1, self.times[idx - 1], idx,  self.times[idx]
-    #
-    #
-    #     print('Time distance: ', abs(timestamp-self.times[idx]))
-    #     if abs(timestamp - self.times[idx]) > delta_threshold_s:
-    #         print('closes_pose_at_time trying to obtain pose with time difference greater than threshold')
-    #         return None
-    #     return self.poses[idx]
+    def interpolated_pose_at_time_new(self, timestamp, verbose=False):
+        """
+        Find a Pose for timestamp, by looking for the two closest times t1 and t2 and
+        computing an interpolation
+        """
+        if len(self.times) == 0:
+            print('No data in buffer.')
+            return None, None, -1
+        longitude = len(self.times)
+        # Find the index where t would be inserted in sorted_times
+        idx = bisect.bisect_left(self.times, timestamp)
+
+        # rel_times = np.array(self.times)-self.times[0]
+        # print('Rel. times:', rel_times)
+        # print('Timestamp: ', timestamp-self.times[0])
+        # Determine the closest times.
+        # three different cases are considered, depending if the
+        # t is before the first element. No interpolation performed.
+        if idx == 0:
+            if verbose:
+                print('* FIRST ELEMENT INTERPOLATION')
+            timestamp_out = self.times[0]
+            interp_pose = self.poses[0]
+            case_type = 0
+        # t is after the last element
+        elif idx == longitude:
+            if verbose:
+                print('** LAST ELEMENT INTERPOLATION')
+            timestamp_out = self.times[-1]
+            interp_pose = self.poses[-1]
+            case_type = 1
+        else:
+            # Take the closest two times around t
+            if verbose:
+                print('*** BETWEEN TWO ELEMENTS INTERPOLATION')
+            pose1 = self.poses[idx-1]
+            pose2 = self.poses[idx]
+            t1 = self.times[idx-1]
+            t2 = self.times[idx]
+            timestamp_out = timestamp
+            interp_pose = self.interpolate_pose(pose1, t1, pose2, t2, timestamp)
+            case_type = 2
+        return interp_pose, timestamp_out, case_type
 
     def interpolated_pose_at_time(self, timestamp, delta_threshold_s=1.0):
         """
@@ -196,12 +200,12 @@ class PosesBuffer():
         idx1, t1, idx2, t2 = self.find_closest_times_around_t_bisect(timestamp)
         if idx1 is None:
             return None, None
-        print('Time distances: ', (timestamp-t1), (t2-timestamp))
-        print('Buffer length: ', len(self.times))
-        dt1 = (timestamp-t1)
-        dt2 = (t2-timestamp)
+        # print('Time distances: ', (timestamp-t1), (t2-timestamp))
+        # print('Buffer length: ', len(self.times))
+        # dt1 = (timestamp-t1)
+        # dt2 = (t2-timestamp)
         if ((timestamp - t1) > delta_threshold_s) or ((t2-timestamp) > delta_threshold_s):
-            print('interpolated_pose_at_time trying to interpolate with time difference greater than threshold')
+            # print('interpolated_pose_at_time trying to interpolate with time difference greater than threshold')
             return None, None
         # ensures t1 < t < t2
         if t1 <= timestamp <= t2:
