@@ -52,8 +52,8 @@ class LocalizationROSNode:
         pose0 = Pose({'x': 0.0, 'y': 0.0, 'z': 0.0,
                       'qx': 0.00, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0})
 
-        # pose0 = Pose({'x': 0.0, 'y': 2.05, 'z': -2.0,
-        #               'qx': 0.00, 'qy': -0.013, 'qz': 0.76, 'qw': 0.64})
+        # pose0 = Pose({'x': 24.0, 'y': -13.05, 'z': 0.0,
+        #               'qx': 0.00, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0})
 
         # transforms
         T0 = pose0.T() #HomogeneousMatrix()
@@ -126,7 +126,7 @@ class LocalizationROSNode:
         rospy.Subscriber(MAP_SM_GLOBAL_POSE_TOPIC, Odometry, self.map_sm_global_pose_callback)
 
         # Set up a timer to periodically update the graphSLAM graph
-        rospy.Timer(rospy.Duration(1), self.optimize_graph_timer_callback)
+        # rospy.Timer(rospy.Duration(1), self.optimize_graph_timer_callback)
         # Set up a timer to periodically update the plot
         rospy.Timer(rospy.Duration(3), self.plot_timer_callback)
 
@@ -158,16 +158,25 @@ class LocalizationROSNode:
         start_time = time.time()
         # CAUTION! directly updating graph without  odometry buffer
         update_odo_observations(self, pose, timestamp)
+        update_sm_observations(self)
+        update_prior_map_observations(self)
+
+        # odotry is at 20Hz, 1 optimization every 2 seconds
+        if self.optimization_index % 50 == 0:
+            self.graphslam.optimize()
+
+
         # performing all the rest of observations in the same thread
         # update_sm_observations(self)
         # update_prior_map_observations(self)
         # caution, publishing here!
         # CAUTION! DO NOT OPTIMIZE IN THIS FUNCITON
         self.publish_graph()
+        self.optimization_index += 1
         end_time = time.time()
-        print(30*'=')
-        print(f"odom_callback time time:, {end_time - start_time:.4f} seconds")
-        print(30 * '=')
+        # print(30*'=')
+        # print(f"odom_callback time time:, {end_time - start_time:.4f} seconds")
+        # print(30 * '=')
         # self.update_graph_timer_callback_times.append(end_time - start_time)
 
     def odom_sm_callback(self, msg):
@@ -212,16 +221,16 @@ class LocalizationROSNode:
         aruco_id = int(msg.header.frame_id)
         self.aruco_observations_ids.append(aruco_id)
 
-    def optimize_graph_timer_callback(self, event):
-        start_time = time.time()
-        # performing all the rest of observations in the same thread
-        update_sm_observations(self)
-        update_prior_map_observations(self)
-        self.graphslam.optimize()
-        end_time = time.time()
-        print(30 * '=')
-        print(f"optimize_graph_timer_callback time time:, {end_time - start_time:.4f} seconds")
-        print(30 * '=')
+    # def optimize_graph_timer_callback(self, event):
+    #     start_time = time.time()
+    #     # performing all the rest of observations in the same thread
+    #     update_sm_observations(self)
+    #     update_prior_map_observations(self)
+    #     self.graphslam.optimize()
+    #     end_time = time.time()
+    #     print(30 * '=')
+    #     print(f"optimize_graph_timer_callback time time:, {end_time - start_time:.4f} seconds")
+    #     print(30 * '=')
 
     def publish_graph(self):
         """

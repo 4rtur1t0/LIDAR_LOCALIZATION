@@ -25,8 +25,8 @@ def update_odo_observations(nodeloc, pose, timestamp):
     # Now, only add another pointcloud if the odometry is significantly moved
     d, th = compute_rel_distance(odo_ti, odo_tj)
     if d < d_poses and th < th_poses:
-        print('(d, th): ', d, th)
         return
+    print('(d, th): ', d, th)
     print('Adding ODO STATE AND EDGES to the graph')
     print('Tiempo odometry', timestamp)
     Ti = nodeloc.last_odom_pose.T()
@@ -40,11 +40,11 @@ def update_odo_observations(nodeloc, pose, timestamp):
     print(50 * '*')
 
     print('Current key is: ', nodeloc.current_key)
-    if nodeloc.graphslam.check_estimate(nodeloc.current_key) is False:
-        print('DETECTED NON EXISTENT current_key')
-        print('REDUCING current_key AND TRYING TO CREATE ANOTHER ONE')
-        print(300*'&')
-        nodeloc.current_key -= 1
+    # if nodeloc.graphslam.check_estimate(nodeloc.current_key) is False:
+    #     print('DETECTED NON EXISTENT current_key')
+    #     print('REDUCING current_key AND TRYING TO CREATE ANOTHER ONE')
+    #     print(300*'&')
+    #     nodeloc.current_key -= 1
 
     nodeloc.graphslam.add_initial_estimate(Tij, nodeloc.current_key + 1)
     nodeloc.graphslam.add_edge(Tij, nodeloc.current_key, nodeloc.current_key + 1, 'ODO')

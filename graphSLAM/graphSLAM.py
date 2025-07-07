@@ -115,17 +115,29 @@ class GraphSLAM():
 
     def add_initial_estimate(self, atb, k):
         next_estimate = self.current_estimate.atPose3(X(k-1)).compose(gtsam.Pose3(atb.array))
-        self.initial_estimate.insert(X(k), next_estimate)
-        self.current_estimate.insert(X(k), next_estimate)
+        while True:
+            self.initial_estimate.insert(X(k), next_estimate)
+            if self.initial_estimate.exists(X(k)):
+                break
+            print('Retrying insert initial_estimate. Next estimate is:')
+            print(next_estimate)
+        while True:
+            self.current_estimate.insert(X(k), next_estimate)
+            if self.current_estimate.exists(X(k)):
+                break
+            print('Retrying insert current_estimate. Next estimate is:')
+            print(next_estimate)
 
 
-    def add_initial_landmark_estimate(self, atb, k, landmark_id):
-        """
-        Landmark k observed from pose i
-        """
-        landmark_estimate = self.current_estimate.atPose3(X(k)).compose(gtsam.Pose3(atb.array))
-        self.initial_estimate.insert(L(landmark_id), landmark_estimate)
-        self.current_estimate.insert(L(landmark_id), landmark_estimate)
+
+
+    # def add_initial_landmark_estimate(self, atb, k, landmark_id):
+    #     """
+    #     Landmark k observed from pose i
+    #     """
+    #     landmark_estimate = self.current_estimate.atPose3(X(k)).compose(gtsam.Pose3(atb.array))
+    #     self.initial_estimate.insert(L(landmark_id), landmark_estimate)
+    #     self.current_estimate.insert(L(landmark_id), landmark_estimate)
 
     def add_edge(self, atb, i, j, noise_type):
         """
@@ -167,7 +179,6 @@ class GraphSLAM():
         Tprior = gtsam.Pose3(T_prior_x_i.array)
         # add prior factor
         self.graph.push_back(gtsam.PriorFactorPose3(X(i), Tprior, noise))
-
 
     def optimize(self):
         print(50*'#')
