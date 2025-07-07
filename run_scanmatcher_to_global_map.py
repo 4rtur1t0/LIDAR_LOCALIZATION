@@ -112,6 +112,7 @@ class GlobalMap():
         )
         print("[RESULT] Transformation matrix:\n", reg_result.transformation)
         print("[INFO] Fitness:", reg_result.fitness, "Inlier RMSE:", reg_result.inlier_rmse)
+        print("[RESULT]", reg_result)
 
         if show:
             # 7. Visualize result
@@ -134,7 +135,7 @@ class GlobalScanMatchingROSNode:
         # store the localized pose in deque fashion
         self.localized_pose_buffer = PosesBuffer(maxlen=5000)
         # store the received pointclouds
-        self.lidar_queue = deque(maxlen=20)
+        self.lidar_queue = deque(maxlen=100)
         # LOAD THE MAP
         print('Loading MAP')
         self.global_map = GlobalMap(map_directory=MAP_DIRECTORY, map_filename='global_map.pcd')
@@ -225,7 +226,12 @@ class GlobalScanMatchingROSNode:
             This /localized_pose is used as an initial estimation and usually obtained from the localization node itself.
             This should be the /localized_pose topic, which maintains
             the last localization with all the information, excluding
-            the localization with respec to the map.
+            the localization with respect to the map.
+
+            To do this we have:
+            - a buffer of loacized_poses (the last estimation). This function is called whenever a new localized posed
+            ois received. Only the last two values are used.
+            - a buffer of pcds. We try to find a pcd between the times of the last localized poses (startgin from the last received pcd)
         """
         print(50 * '_')
         print('Calling global localization method!!!')
@@ -235,10 +241,10 @@ class GlobalScanMatchingROSNode:
         if len(self.localized_pose_buffer) < 2:
             print('Did not receive enough localized initial poses')
             return
-        ta = self.localized_pose_buffer.times[-2]
-        tb = self.localized_pose_buffer.times[-1]
-        pcdini = self.lidar_queue[0]
-        pcdend = self.lidar_queue[-1]
+        ta = self.localized_pose_buffer.times[-2] # penultim
+        tb = self.localized_pose_buffer.times[-1] # ultim
+        pcdini = self.lidar_queue[0] # primera en buffer
+        pcdend = self.lidar_queue[-1] # ultima en buffer
         print('Last two times localized pose: ', ta-self.start_time, tb-self.start_time)
         print('Times buffer lidar buffer: ', pcdini.time - self.start_time, pcdend.time - self.start_time)
         # print('Diff time localized buffer - pcd buffer end: ', tend-pcdend.time)
@@ -246,17 +252,19 @@ class GlobalScanMatchingROSNode:
 
         N = len(self.lidar_queue)
         # try to localize on a buffer of saved pcds
-        for i in range(N):
-            print(20 * '+')
-            print('In queue, processing in temporal buffer for pcds: ', i)
+        # for i in range(N):
+        # start with t last received pcd
+        for i in range(N-1, 0, -1):
+            # print(20 * '+')
+            # print('In queue, processing in temporal buffer for pcds: ', i)
             # caution, looking on the right, the last
             pcd = self.lidar_queue[i]
             timestamp_pcd = pcd.time
             # cannot localize in this case
             if ta < timestamp_pcd < tb:
-                print('continue timestamp_pcd < tini')
+                # print('continue timestamp_pcd < tini')
                 # try to localize the last received pose
-                res = self.compute_global_scanmatching(pcd, timestamp_pcd=timestamp_pcd)
+                self.compute_global_scanmatching(pcd, timestamp_pcd=timestamp_pcd)
                 break
 
     def compute_global_scanmatching(self, pcd, timestamp_pcd):

@@ -104,10 +104,10 @@ class LocalizationROSNode:
                                                'MAPSM': set()}
         # Load the ground truth trajectory
         # must match with the rosbag file
-        # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
+        directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
         # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO3-2025-06-16-13-49-28'
         # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO4-2025-06-16-15-56-11'
-        directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO5-2025-06-16-17-53-54'
+        # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO5-2025-06-16-17-53-54'
         self.robotpath = PosesBuffer(maxlen=10000)
         self.robotpath.read_data_tum(directory=directory_ground_truth_path, filename='/robot0/SLAM/data_poses_tum.txt')
 

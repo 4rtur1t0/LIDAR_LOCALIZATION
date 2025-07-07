@@ -18,8 +18,8 @@ graphslam:
 
 # the scanmatcher is used for sequential scanmatching and to find registrations between non-consecutive pointclouds
 scanmatcher:
-  d_poses: 0.3
-  th_poses: 0.2
+  d_poses: 0.1
+  th_poses: 0.05
 
   # max time distance to find a valid odometry interpolation (given the lidar time, find odo)
   # a warning is issued and no odometry is interpolated

@@ -200,7 +200,8 @@ class ScanmatchingNode:
 
     def perform_local_scanmatching(self, msg):
         start = time.time()
-        delta_threshold_s = PARAMETERS.config.get('scanmatcher').get('delta_threshold_s')
+        d_poses = PARAMETERS.config.get('scanmatcher').get('d_poses')
+        th_poses = PARAMETERS.config.get('scanmatcher').get('th_poses')
         voxel_size = PARAMETERS.config.get('scanmatcher').get('voxel_size')
         voxel_size_normals = PARAMETERS.config.get('scanmatcher').get('normals').get('voxel_size_normals')
         max_nn_normals = PARAMETERS.config.get('scanmatcher').get('normals').get('max_nn_normals')
@@ -253,20 +254,28 @@ class ScanmatchingNode:
 
         pcd = LidarScan(time=timestamp, pose=odo_tj)
         pcd.load_pointcloud_from_msg(msg=msg)
-
+        # the last received p
         self.pcd2 = pcd
+        # compute initial transform from odometry
+        odoi = self.pcd1.pose.T()
+        odoj = self.pcd2.pose.T()
+        Tij0 = odoi.inv() * odoj
+
+        d = np.linalg.norm(Tij0.pos())
+        th = min(Tij0.R().euler()[0].abg[0],Tij0.R().euler()[1].abg[0])
+        print('d, th: ', d, th)
+        if d < d_poses and th < th_poses:
+            print('Caution: no movement found')
+            print("No movement")
+            return None
+
         # process pcd2
         self.pcd2.down_sample(voxel_size=voxel_size)
         self.pcd2.filter_points()
         self.pcd2.estimate_normals(voxel_size_normals=voxel_size_normals,
                                    max_nn_estimate_normals=max_nn_normals)
 
-        # compute initial transform from odometry
-        odoi = self.pcd1.pose.T()
-        odoj = self.pcd2.pose.T()
-        Tij0 = odoi.inv() * odoj
         Tij = self.scanmatcher.registration(self.pcd1, self.pcd2, Tij_0=Tij0)
-
         # draw registration result
         # self.relative_transforms.append((Tij, timestamp))
         # append to global transforms
@@ -282,7 +291,6 @@ class ScanmatchingNode:
         end = time.time()
         # self.computation_times.append(end-start)
         self.frequency.append(1 / (end - start))
-
         return Tg
 
 if __name__ == "__main__":
