@@ -75,7 +75,6 @@ class ScanmatchingNode:
 
         self.times_odometry = []
         self.times_lidar = []
-        # self.positions_sm = []
         # the scanmatching object
         self.scanmatcher = ScanMatcher()
         self.timer_callback_process_scanmatching_computation_time = []
