@@ -1,11 +1,4 @@
-gps:
-  delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
-  min_status: 0 # minimum status for a GPS to be valid
-  max_sigma_xy: 5 # max xy sigma
-  utm_reference:
-    latitude: 38.275185
-    longitude: -0.685623
-    altitude: 160.0
+
 
 odo:
   delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
@@ -15,6 +8,8 @@ graphslam:
   #cte a new state whenever the odometry moves more than these thresholds
   d_poses: 0.3
   th_poses: 0.15
+  skip_optimization: 40 # this goes with the frequency of the odometry. If odometry is at 20Hz, optimization is performed
+                        # every two seconds
 
 # the scanmatcher is used for sequential scanmatching and to find registrations between non-consecutive pointclouds
 scanmatcher:
@@ -50,14 +45,22 @@ scanmatcher:
     delay_seconds_lidar_odometry: 0.2
 
 
-  threads:
-    # process scanmatching between pointclouds every 0.35 seconds
-    # should be approx. equal to the period between lidar scans
-    seconds_period_scanmatching_thread: 0.5
-    # publish the last transform 0.35 seconds
-    seconds_period_publish_thread: 0.1
-    # plot info in plot.png
-    seconds_period_plot_info_thread: 1.0
+#  threads:
+#    # process scanmatching between pointclouds every 0.35 seconds
+#    # should be approx. equal to the period between lidar scans
+#    seconds_period_scanmatching_thread: 0.5
+#    # publish the last transform 0.35 seconds
+#    seconds_period_publish_thread: 0.1
+#    # plot info in plot.png
+#    seconds_period_plot_info_thread: 1.0
 
 
+gps:
+  delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
+  min_status: 0 # minimum status for a GPS to be valid
+  max_sigma_xy: 5 # max xy sigma
+  utm_reference:
+    latitude: 38.275185
+    longitude: -0.685623
+    altitude: 160.0
 

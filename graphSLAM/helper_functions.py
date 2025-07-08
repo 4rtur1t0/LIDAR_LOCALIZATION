@@ -1,5 +1,5 @@
 import numpy as np
-from artelib.homogeneousmatrix import HomogeneousMatrix
+# from artelib.homogeneousmatrix import HomogeneousMatrix
 from config import PARAMETERS
 
 
@@ -38,13 +38,7 @@ def update_odo_observations(nodeloc, pose, timestamp):
     print('Adding relative transformation: ')
     Tij.print_nice()
     print(50 * '*')
-
     print('Current key is: ', nodeloc.current_key)
-    # if nodeloc.graphslam.check_estimate(nodeloc.current_key) is False:
-    #     print('DETECTED NON EXISTENT current_key')
-    #     print('REDUCING current_key AND TRYING TO CREATE ANOTHER ONE')
-    #     print(300*'&')
-    #     nodeloc.current_key -= 1
 
     nodeloc.graphslam.add_initial_estimate(Tij, nodeloc.current_key + 1)
     nodeloc.graphslam.add_edge(Tij, nodeloc.current_key, nodeloc.current_key + 1, 'ODO')
@@ -56,14 +50,12 @@ def update_odo_observations(nodeloc, pose, timestamp):
     nodeloc.last_odom_pose = pose
 
 
-
 def update_sm_observations(nodeloc):
     """
     # SM observations create a new state and a relation between two states.
     SM observations create relationships between states. The creation of new nodes in the graph is done
     with the odometry, which is faster.
     """
-    # delta_threshold_s = PARAMETERS.config.get('graphslam').get('delta_threshold_s')
     print('UPDATING with last SM observations')
     if len(nodeloc.odom_sm_buffer) == 0:
         print("\033[91mCaution!!! No odometry SM in buffer yet.\033[0m")
@@ -73,20 +65,16 @@ def update_sm_observations(nodeloc):
         return
     ############################################
     # add sm observations as edges
-    # all sm observations are removed afterwards
+    # the last edge "touched" is saved to avoid updating the same
+    # edge indices constanly
     ############################################
     first_index_in_graphslam = nodeloc.last_processed_index['ODOSM']
     # given the last processed index in the graph. We iteratively follow
     # the rest of the nodes and try to include Scanmatching edge relations
-    # for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times) - 1):
-    # for i in range(first_index_in_graphslam, nodeloc.current_key-1):
     for i in range(first_index_in_graphslam, nodeloc.current_key - 1):
         time_graph1 = nodeloc.graphslam_times[i]
         time_graph2 = nodeloc.graphslam_times[i + 1]
-        # getting the closest pose in scanmatching
-        # working
-        # smodoi, _ = nodeloc.odom_sm_buffer.get_closest_pose_at_time(timestamp=time_graph1, delta_threshold_s=delta_threshold_s)
-        # smodoj, _ = nodeloc.odom_sm_buffer.get_closest_pose_at_time(timestamp=time_graph2, delta_threshold_s=delta_threshold_s)
+        # getting the closest pose in scanmatching by interpolation
         smodoi, _, case_typei = nodeloc.odom_sm_buffer.interpolated_pose_at_time_new(timestamp=time_graph1)
         smodoj, _, case_typej = nodeloc.odom_sm_buffer.interpolated_pose_at_time_new(timestamp=time_graph2)
         if case_typei < 2 or case_typej < 2:
@@ -160,21 +148,16 @@ def update_prior_map_observations(nodeloc):
         print("\033[91mCaution!!! No graph yet.\033[0m")
         return
     print('UPDATING with last GLOBAL SCANMATCHING MAPSM observations')
-    # delta_threshold_s = PARAMETERS.config.get('graphslam').get('delta_threshold_s')
+
     # iterate from the last processed index in the graph, look for GPS and add them to the graph
     first_index_in_graphslam = nodeloc.last_processed_index['MAPSM']
-    # running through the nodes of the graph (non visited yet). Looking for gps observations at that time
-    # for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times)):
-    # for i in range(first_index_in_graphslam, nodeloc.current_key):
+    # running through the nodes of the graph (non visited yet). Looking for prior observations at that time
+    # the prior observations are obtained by interpolation, from a buffer of prior estimations (with respect
+    # to the global map)
     for i in range(first_index_in_graphslam, nodeloc.current_key):
         # get the corresponding time
         timestamp_i_in_graphslam = nodeloc.graphslam_times[i]
         # find the interpolation that corresponds to that particular time in the graph
-        # prior_i, _ = nodeloc.map_sm_prior_buffer.get_closest_pose_at_time(timestamp=timestamp_i_in_graphslam,
-        #                                                                   delta_threshold_s=delta_threshold_s)
-
-        # prior_i, _ = nodeloc.map_sm_prior_buffer.interpolated_pose_at_time(timestamp_i_in_graphslam,
-        #                                                                   delta_threshold_s=delta_threshold_s)
         prior_i, _, case_type = nodeloc.map_sm_prior_buffer.interpolated_pose_at_time_new(timestamp_i_in_graphslam)
         if case_type < 2:
             continue
@@ -186,54 +169,53 @@ def update_prior_map_observations(nodeloc):
         nodeloc.graphslam.add_prior_factor(Trobot_prior, i, 'MAPSM')
         nodeloc.graphslam_observations_indices['MAPSM'].add(i)
         # caution, allowing for some search back in time!
-        nodeloc.last_processed_index['MAPSM'] = i #max(0, i - 100)
-        # nodeloc.last_processed_index['MAPSM'] = i
+        nodeloc.last_processed_index['MAPSM'] = i
     nodeloc.optimization_index += 1
 
-def update_aruco_observations(nodeloc):
-    #################################################
-    # integrate ARUCO OBSERVATIONS
-    # ARUCO observations use the existing ARUCO landmarks map. Given a relative observation,
-    # we can retrieve and observe the robot position by a inverse transformation
-    #################################################
-    if len(nodeloc.aruco_observations_buffer) == 0:
-        print("\033[91mCaution!!! No aruco observations in buffer yet.\033[0m")
-        return
-    if len(nodeloc.graphslam_times) == 0:
-        print("\033[91mCaution!!! No graph yet.\033[0m")
-        return
-    delta_threshold_s = 0.05
-    timi_aruco_ini = nodeloc.aruco_observations_buffer.get_last_processed_time()
-    # look for the times in the graph that can be updated with new information
-    indices = np.where(nodeloc.graphslam_times > timi_aruco_ini)[0]
-    first_index = indices[0] if indices.size > 0 else None
-    if first_index is None:
-        print("\033[91mCaution!!! No times in graph with corresponding aruco time.\033[0m")
-        return
-    # running through the nodes of the graph (non visited yet)
-    # caution, the ARUCO observation is associated to any time that is found to be close
-    # to any time in the graph (close in time, i. e. 0.05 seconds, for example)
-    for i in range(first_index, len(nodeloc.graphslam_times)):
-        time_aruco_i = nodeloc.graphslam_times[i]
-        # get the relative transformation (stored as Pose) that is closest to that time
-        aruco_transform_i = nodeloc.aruco_observations_buffer.get_closest_pose_at_time(time_aruco_i,
-                                                                                       delta_threshold_s=delta_threshold_s)
-        index_aruco = nodeloc.aruco_observations_buffer.get_closest_index_to_time(time_aruco_i,
-                                                                                  delta_threshold_s=delta_threshold_s)
-        aruco_id = nodeloc.aruco_observations_ids[index_aruco]
-        # reset proc time
-        nodeloc.aruco_observations_buffer.last_processed_time = time_aruco_i + delta_threshold_s
-        if aruco_transform_i is None:
-            continue
-        # add a GPS factor on node i of the graph.aution
-        print('ADD ARUCO FACTOR!!!')
-        Tca = aruco_transform_i
-        Trobot = nodeloc.map.localize_with_aruco(Tca.T(), aruco_id, Tlidar_cam=nodeloc.graphslam.Tlidar_cam)
-        # This may happen if the ARUCO_ID is not found in the map
-        if Trobot is None:
-            continue
-        # add_prior_factor, aruco transform i, aruco_id
-        nodeloc.graphslam.add_prior_factor_aruco(Trobot, i)
+# def update_aruco_observations(nodeloc):
+#     #################################################
+#     # integrate ARUCO OBSERVATIONS
+#     # ARUCO observations use the existing ARUCO landmarks map. Given a relative observation,
+#     # we can retrieve and observe the robot position by a inverse transformation
+#     #################################################
+#     if len(nodeloc.aruco_observations_buffer) == 0:
+#         print("\033[91mCaution!!! No aruco observations in buffer yet.\033[0m")
+#         return
+#     if len(nodeloc.graphslam_times) == 0:
+#         print("\033[91mCaution!!! No graph yet.\033[0m")
+#         return
+#     delta_threshold_s = 0.05
+#     timi_aruco_ini = nodeloc.aruco_observations_buffer.get_last_processed_time()
+#     # look for the times in the graph that can be updated with new information
+#     indices = np.where(nodeloc.graphslam_times > timi_aruco_ini)[0]
+#     first_index = indices[0] if indices.size > 0 else None
+#     if first_index is None:
+#         print("\033[91mCaution!!! No times in graph with corresponding aruco time.\033[0m")
+#         return
+#     # running through the nodes of the graph (non visited yet)
+#     # caution, the ARUCO observation is associated to any time that is found to be close
+#     # to any time in the graph (close in time, i. e. 0.05 seconds, for example)
+#     for i in range(first_index, len(nodeloc.graphslam_times)):
+#         time_aruco_i = nodeloc.graphslam_times[i]
+#         # get the relative transformation (stored as Pose) that is closest to that time
+#         aruco_transform_i = nodeloc.aruco_observations_buffer.get_closest_pose_at_time(time_aruco_i,
+#                                                                                        delta_threshold_s=delta_threshold_s)
+#         index_aruco = nodeloc.aruco_observations_buffer.get_closest_index_to_time(time_aruco_i,
+#                                                                                   delta_threshold_s=delta_threshold_s)
+#         aruco_id = nodeloc.aruco_observations_ids[index_aruco]
+#         # reset proc time
+#         nodeloc.aruco_observations_buffer.last_processed_time = time_aruco_i + delta_threshold_s
+#         if aruco_transform_i is None:
+#             continue
+#         # add a GPS factor on node i of the graph.aution
+#         print('ADD ARUCO FACTOR!!!')
+#         Tca = aruco_transform_i
+#         Trobot = nodeloc.map.localize_with_aruco(Tca.T(), aruco_id, Tlidar_cam=nodeloc.graphslam.Tlidar_cam)
+#         # This may happen if the ARUCO_ID is not found in the map
+#         if Trobot is None:
+#             continue
+#         # add_prior_factor, aruco transform i, aruco_id
+#         nodeloc.graphslam.add_prior_factor_aruco(Trobot, i)
 
 
 def compute_rel_distance(odo1, odo2):

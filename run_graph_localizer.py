@@ -1,22 +1,32 @@
 """
-Using GTSAM in a GraphSLAM context.
-We are integrating odometry, scanmatching odometry and (if present) GPS.
-    The state X is the position and orientation frame of the robot, placed on the GPS sensor.
+Using GTSAM in a GraphSLAM context for Localization.
 
+We are integrating odometry, scanmatching odometry and global scanmatching.
+    The state X is the position and orientation frame of the robot, placed on the GPS sensor. Published as /localized_pose
+
+    New nodes are created whenever a movement is found from odometry.
+
+    Edges between nodes are created from:
+    - odometry.
+    - scanmatching (LiDAR) odometry.
+
+    The scanmatcher node publishes the path as estimated by local scanmatching. This node subscribes to it and
+    adds edges based on the relative estimation. In general, interpolation is used to find the correct transformations
+    between the edges in the graph.
+
+    Finally, a prior is placed on some of the edges based on a global localization node (scanmatcher to global).
+    This node, uses the initial /localized_pose, computes a scanmatching and publishes the "refined estimation". Again,
+    an interpolation is found to apply the prior to some to the nodes in the graph.
 """
 from collections import deque
 import rospy
 import numpy as np
 from graphSLAM.helper_functions import update_sm_observations, update_odo_observations, \
-    filter_and_convert_gps_observations, update_gps_observations, update_aruco_observations, \
-    update_prior_map_observations
-# from map.map import Map
+    filter_and_convert_gps_observations, update_prior_map_observations
 from nav_msgs.msg import Odometry
 from observations.gpsbuffer import GPSBuffer, GPSPosition
-# from observations.lidarbuffer import LidarBuffer
 from observations.posesbuffer import PosesBuffer, Pose
 from sensor_msgs.msg import NavSatFix
-# from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from graphSLAM.graphSLAM import GraphSLAM
@@ -24,6 +34,7 @@ from artelib.homogeneousmatrix import HomogeneousMatrix
 from artelib.vector import Vector
 from artelib.euler import Euler
 import time
+from config import PARAMETERS
 
 fig1, ax1 = plt.subplots(figsize=(12, 8))
 ax1.set_title('MAP/poses')
@@ -39,22 +50,18 @@ canvas3 = FigureCanvas(fig3)
 
 ODOMETRY_TOPIC = '/husky_velocity_controller/odom'
 ODOMETRY_SCANMATCHING_LIDAR_TOPIC='/odometry_lidar_scanmatching'
-# ODOMETRY_SCANMATCHING_LIDAR_TOPIC = '/genz/odometry'
-# GNSS_TOPIC = '/gnss/fix'
-GNSS_TOPIC = '/gnss/fix_fake'
+# GNSS_TOPIC = '/gnss/fix_fake'
 MAP_SM_GLOBAL_POSE_TOPIC = '/map_sm_global_pose'
-
 # the localized estimation, based on odometry, local scanmatching and global scanmatching
 OUTPUT_TOPIC = '/localized_pose'
+
 
 class LocalizationROSNode:
     def __init__(self):
         pose0 = Pose({'x': 0.0, 'y': 0.0, 'z': 0.0,
                       'qx': 0.00, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0})
-
         # pose0 = Pose({'x': 24.0, 'y': -13.05, 'z': 0.0,
         #               'qx': 0.00, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0})
-
         # transforms
         T0 = pose0.T() #HomogeneousMatrix()
         # T LiDAR-GPS
@@ -80,7 +87,7 @@ class LocalizationROSNode:
         self.aruco_observations_buffer = PosesBuffer(maxlen=5000)
         self.aruco_observations_ids = deque(maxlen=5000)
         # do not skip optimization at each timestep
-        self.skip_optimization = 1
+        self.skip_optimization = PARAMETERS.config.get('graphslam').get('skip_optimization')
         self.current_key = 0
         self.optimization_index = 1
         # graphslam times. Each node in the graph has an associated time, stored in this list
@@ -104,12 +111,14 @@ class LocalizationROSNode:
                                                'MAPSM': set()}
         # Load the ground truth trajectory
         # must match with the rosbag file
-        directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
+        # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
         # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO3-2025-06-16-13-49-28'
-        # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO4-2025-06-16-15-56-11'
+        directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO4-2025-06-16-15-56-11'
         # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO5-2025-06-16-17-53-54'
+        # directory_ground_truth_path = None
         self.robotpath = PosesBuffer(maxlen=10000)
-        self.robotpath.read_data_tum(directory=directory_ground_truth_path, filename='/robot0/SLAM/data_poses_tum.txt')
+        if directory_ground_truth_path is not None:
+            self.robotpath.read_data_tum(directory=directory_ground_truth_path, filename='/robot0/SLAM/data_poses_tum.txt')
 
         # ROS STUFFF
         print('Initializing global scanmatching node!')
@@ -120,17 +129,11 @@ class LocalizationROSNode:
         # Subscriptions
         rospy.Subscriber(ODOMETRY_TOPIC, Odometry, self.odom_callback)
         rospy.Subscriber(ODOMETRY_SCANMATCHING_LIDAR_TOPIC, Odometry, self.odom_sm_callback)
-        rospy.Subscriber(GNSS_TOPIC, NavSatFix, self.gps_callback)
-        # the ARUCO observations
-        # rospy.Subscriber('/aruco_observation', PoseStamped, self.aruco_observation_callback)
+        # rospy.Subscriber(GNSS_TOPIC, NavSatFix, self.gps_callback)
         rospy.Subscriber(MAP_SM_GLOBAL_POSE_TOPIC, Odometry, self.map_sm_global_pose_callback)
-
-        # Set up a timer to periodically update the graphSLAM graph
-        # rospy.Timer(rospy.Duration(1), self.optimize_graph_timer_callback)
         # Set up a timer to periodically update the plot
         rospy.Timer(rospy.Duration(3), self.plot_timer_callback)
-
-        # Publisher
+        # Publisher. Yes Declaring the topic to be published: /localized_pose
         self.pub = rospy.Publisher(OUTPUT_TOPIC, Odometry, queue_size=10)
 
         # TIME measurement
@@ -161,23 +164,17 @@ class LocalizationROSNode:
         update_sm_observations(self)
         update_prior_map_observations(self)
 
-        # odotry is at 20Hz, 1 optimization every 2 seconds
-        if self.optimization_index % 50 == 0:
+        # odotry is at 20Hz, 1 optimization every 2 seconds: skip_optimization=40
+        if self.optimization_index % self.skip_optimization == 0:
             self.graphslam.optimize()
-
-
-        # performing all the rest of observations in the same thread
-        # update_sm_observations(self)
-        # update_prior_map_observations(self)
-        # caution, publishing here!
-        # CAUTION! DO NOT OPTIMIZE IN THIS FUNCITON
+            end_time = time.time()
+            print(30*'=')
+            print(f"odom_callback time after optimization :, {end_time - start_time:.4f} seconds")
+            print(30 * '=')
+        # Publishing the last pose after each odometry reading
+        # caution: new nodes in the graph are only created whenever d_poses and th_poses is found in the odometry
         self.publish_graph()
         self.optimization_index += 1
-        end_time = time.time()
-        # print(30*'=')
-        # print(f"odom_callback time time:, {end_time - start_time:.4f} seconds")
-        # print(30 * '=')
-        # self.update_graph_timer_callback_times.append(end_time - start_time)
 
     def odom_sm_callback(self, msg):
         """
@@ -221,17 +218,6 @@ class LocalizationROSNode:
         aruco_id = int(msg.header.frame_id)
         self.aruco_observations_ids.append(aruco_id)
 
-    # def optimize_graph_timer_callback(self, event):
-    #     start_time = time.time()
-    #     # performing all the rest of observations in the same thread
-    #     update_sm_observations(self)
-    #     update_prior_map_observations(self)
-    #     self.graphslam.optimize()
-    #     end_time = time.time()
-    #     print(30 * '=')
-    #     print(f"optimize_graph_timer_callback time time:, {end_time - start_time:.4f} seconds")
-    #     print(30 * '=')
-
     def publish_graph(self):
         """
         Publish all the poses until now
@@ -257,10 +243,10 @@ class LocalizationROSNode:
         position = T.pos()# print(pose)
         orientation = T.Q()
         msg = Odometry()
-        msg.header.stamp = rospy.Time.from_sec(timestamp) #rospy.Time.now()
+        msg.header.stamp = rospy.Time.from_sec(timestamp)
         # caution: the frame_id stores the index in the graph, so that the graph localizer in map can
         # also find a localization in the map and return.
-        msg.header.frame_id = "map" #str(index_in_graph) #"map"
+        msg.header.frame_id = "map"
         msg.child_frame_id = "odom"
         msg.pose.pose.position.x = position[0]
         msg.pose.pose.position.y = position[1]
@@ -279,23 +265,17 @@ class LocalizationROSNode:
         map_sm_prior_positions = self.map_sm_prior_buffer.get_positions()
         # plot the groundtruth of the map
         map_robot_path_positions = self.robotpath.get_positions()
-        # map_robot_path_positions = map_robot_path_positions[0:1500, :]
         # plot posittions
         ax1.clear()
         if len(positions) > 0:
             ax1.scatter(positions[:, 0], positions[:, 1], marker='.', s=30, color='blue', label='GraphSLAM solutions')
-
         if len(utmpositions) > 0:
             ax1.scatter(utmpositions[:, 0],
-                       utmpositions[:, 1], marker='.', color='red', label='UTM readings')
-
+                        utmpositions[:, 1], marker='.', color='red', label='UTM readings')
         if len(map_sm_prior_positions) > 0:
             ax1.scatter(map_sm_prior_positions[:, 0],
                         map_sm_prior_positions[:, 1], marker='.', s=20, color='black', label='Map prior Scanmatching')
-
         if len(map_robot_path_positions) > 0:
-            # N = len(positions)
-            # map_robot_path_positions = map_robot_path_positions[0:N]
             ax1.scatter(map_robot_path_positions[:, 0],
                         map_robot_path_positions[:, 1], marker='.', s=1, color='green', label='Map path')
         ax1.legend()
@@ -342,7 +322,6 @@ class LocalizationROSNode:
 
 
 if __name__ == "__main__":
-    filename = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17.bag'
     node = LocalizationROSNode()
     node.run()
 

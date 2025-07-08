@@ -34,9 +34,6 @@ fig2, ax2 = plt.subplots(figsize=(12, 8))
 ax2.set_title('Computation time scanmatching')
 canvas2 = FigureCanvas(fig2)
 
-# fig3, ax3 = plt.subplots(figsize=(6, 4))
-# ax3.set_title('OBSERVATIONS INDICES IN GRAPH')
-# canvas3 = FigureCanvas(fig3)
 
 
 def compute_rel_distance(odo1, odo2):
@@ -97,7 +94,6 @@ class ScanmatchingNode:
         self.time_diffs = []
         self.time_sleep_synchro = 1.5
 
-
     def run(self):
         rospy.spin()
 
@@ -154,21 +150,7 @@ class ScanmatchingNode:
         msg.pose.pose.orientation.w = orientation.qw
         self.pub.publish(msg)
 
-
     def timer_callback_plot_info(self, event):
-        # print(50 * '*')
-        # print('Number of pointclouds: ')
-        # print('len: ', len(self.pcdbuffer))
-        # print(50 * '*')
-
-        # odom_times = np.array(self.times_odometry) - self.start_time
-        # lidar_times = np.array(self.times_lidar) - self.start_time
-        # ax.clear()
-        # if len(odom_times) > 1:
-        #     ax.scatter(odom_times, np.ones(len(odom_times)), marker='.', color='blue')
-        # if len(lidar_times) > 1:
-        #     ax.scatter(lidar_times, np.ones(len(lidar_times)), marker='.', color='red')
-
         # PLOT LOCALIZATION
         print('Odombuffer length: ', len(self.odombuffer.times))
         # print('LidarBuffer length: ', len(self.pcdbuffer.times))
@@ -178,20 +160,13 @@ class ScanmatchingNode:
             T = self.global_transforms[i][0]
             positions_sm.append(T.pos())
         positions_sm = np.array(positions_sm)
-
         ax1.clear()
         if len(odo_positions) > 0:
             ax1.scatter(odo_positions[:, 0], odo_positions[:, 1], marker='.', color='red', label='Odometry')
-
         if len(positions_sm) > 0:
             # positions_sm = np.array(self.positions_sm)
             ax1.scatter(positions_sm[:, 0], positions_sm[:, 1], marker='.', color='blue', label='Scanmatcher')
-        # if len(self.utm_valid_positions) > 0:
-        #     utm_valid_positions = np.array(self.utm_valid_positions)
-        #     ax.scatter(utm_valid_positions[:, 0],
-        #                utm_valid_positions[:, 1], marker='.', color='red')
         canvas1.print_figure('plots/run_scanmatcher_plot1.png', bbox_inches='tight')
-
         ax2.clear()
         frequency = np.array(self.frequency)
         if len(frequency) > 0:
@@ -207,7 +182,6 @@ class ScanmatchingNode:
         max_nn_normals = PARAMETERS.config.get('scanmatcher').get('normals').get('max_nn_normals')
         # current timestamp
         timestamp = msg.header.stamp.to_sec()
-
         self.time_diffs.append(timestamp - self.odombuffer.times[-1])
 
         if len(self.odombuffer.times) == 0:
@@ -215,17 +189,11 @@ class ScanmatchingNode:
             return
 
         if self.pcd1 is None:
-            # odo_ti, _ = self.odombuffer.interpolated_pose_at_time(timestamp=timestamp,
-            #                                                       delta_threshold_s=delta_threshold_s)
-            # WORKING odo_ti, _ = self.odombuffer.get_closest_pose_at_time(timestamp=timestamp,
-            #                                                     delta_threshold_s=delta_threshold_s)
             odo_ti, _, _ = self.odombuffer.interpolated_pose_at_time_new(timestamp=timestamp)
             # this may happen only when the system is startting and no odometry readings exist
             if odo_ti is None:
                 print('No corresponding odo_ti found, skipping')
                 print(10 * "odo_tI error")
-                # time.sleep(self.time_sleep_synchro)
-                # self.time_sleep_synchro += 0.5
                 return
             pcd = LidarScan(time=timestamp, pose=odo_ti)
             pcd.load_pointcloud_from_msg(msg=msg)
@@ -241,15 +209,10 @@ class ScanmatchingNode:
             return T0
 
         # read the newly received pointcloud odometry
-        # odo_tj, _ = self.odombuffer.get_closest_pose_at_time(timestamp=timestamp, delta_threshold_s=delta_threshold_s)
-        # odo_tj, _ = self.odombuffer.interpolated_pose_at_time(timestamp=timestamp,
-        #                                                       delta_threshold_s=delta_threshold_s)
         odo_tj, _, _ = self.odombuffer.interpolated_pose_at_time_new(timestamp=timestamp)
         if odo_tj is None:
             print('Caution: no interpolated odometry odo_tj found')
             print(10*"odo_tJ error")
-            # time.sleep(self.time_sleep_synchro)
-            # self.time_sleep_synchro+=0.5
             return None
 
         pcd = LidarScan(time=timestamp, pose=odo_tj)
@@ -292,6 +255,7 @@ class ScanmatchingNode:
         # self.computation_times.append(end-start)
         self.frequency.append(1 / (end - start))
         return Tg
+
 
 if __name__ == "__main__":
     node = ScanmatchingNode()

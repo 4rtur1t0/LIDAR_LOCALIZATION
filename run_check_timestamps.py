@@ -10,27 +10,12 @@ We are integrating odometry, scanmatching odometry and (if present) GPS.
     As a result, we end up having another prior3Dfactor observation on the state X(i)
 
 """
-# from collections import deque
 import rospy
 import numpy as np
-# from graphSLAM.helper_functions import update_sm_observations, update_odo_observations, \
-#     filter_and_convert_gps_observations, update_gps_observations, update_aruco_observations
-# from map.map import Map
 from nav_msgs.msg import Odometry
-# from observations.gpsbuffer import GPSBuffer, GPSPosition
-# from observations.lidarbuffer import LidarBuffer, LidarScan
-# from observations.posesbuffer import PosesBuffer, Pose
-# from scanmatcher.scanmatcher import ScanMatcher
 from sensor_msgs.msg import NavSatFix, PointCloud2
-# from geometry_msgs.msg import PoseWithCovarianceStamped, PoseStamped
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-# from graphSLAM.graphSLAM import GraphSLAM
-# from artelib.homogeneousmatrix import HomogeneousMatrix
-# from artelib.vector import Vector
-# from artelib.euler import Euler
-# from config import PARAMETERS
-# from tools.gpsconversions import gps2utm
 
 fig1, ax1 = plt.subplots(figsize=(12, 8))
 ax1.set_title('SCANMATCHING path positions')
@@ -63,7 +48,7 @@ class CheckTimestampsNode:
         # self.gnss_times =  []
         print('Initializing check times node!')
         rospy.init_node('check_times_node')
-        print('Subscribing to ODOMETRY and pointclouds')
+        print('Subscribing to ODOMETRY, scanmatching, scanmatching global and pointclouds')
 
         # Subscriptions to the pointcloud topic and to the
         # current localized pose
@@ -134,22 +119,33 @@ class CheckTimestampsNode:
     def plot_timer_callback(self, event):
         print('Plotting info')
         delta_see = 1
+        last_data = 100
         ax1.clear()
         odometry_times = np.array(self.odometry_times)-self.start_time
         if len(odometry_times) > 0:
+            max_len = min(len(odometry_times), last_data)
+            odometry_times = odometry_times[-max_len:]
             ax1.plot(odometry_times, marker='.', color='red', label='Tiempos odometria')
         odometry_scanmatching_times = np.array(self.odometry_scanmatching_times) - self.start_time - delta_see
         if len(odometry_scanmatching_times) > 0:
+            max_len = min(len(odometry_scanmatching_times), last_data)
+            odometry_scanmatching_times = odometry_scanmatching_times[-max_len:]
             ax1.plot(odometry_scanmatching_times, marker='.', color='green', label='Tiempos local scanmatching')
         pcd_times = np.array(self.pcd_times)-self.start_time
         if len(pcd_times) > 0:
+            max_len = min(len(pcd_times), last_data)
+            pcd_times = pcd_times[-max_len:]
             ax1.plot(pcd_times, marker='.', color='blue', label='Pointcloud times')
         localized_pose_times = np.array(self.localized_pose_times) - self.start_time
         if len(localized_pose_times) > 0:
+            max_len = min(len(localized_pose_times), last_data)
+            localized_pose_times = localized_pose_times[-max_len:]
             ax1.plot(localized_pose_times, marker='.', color='black', label='Localized pose times (LOCALIZATION)')
 
         prior_sm_gloal_map_pose_times = np.array(self.prior_sm_gloal_map_pose_times) - self.start_time
         if len(prior_sm_gloal_map_pose_times) > 0:
+            max_len = min(len(prior_sm_gloal_map_pose_times), last_data)
+            prior_sm_gloal_map_pose_times = prior_sm_gloal_map_pose_times[-max_len:]
             ax1.plot(prior_sm_gloal_map_pose_times, marker='.', color='yellow', label='Map priors GLOBAL MAP scanmatching')
 
         ax1.legend()

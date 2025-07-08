@@ -24,6 +24,8 @@ run_scanmatcher.sh
 #Refina localized_pose sobre un mapa global
 run_scanmatcher_to_global_map.sh
 
+# Plotea tiempos de publicaciones importantes
+./run_check_timestamps.sh
 
 
 LAUNCH
@@ -35,9 +37,9 @@ run_graph_localizer.sh
 
 
 
-rosrun tf2_ros static_transform_publisher 0 0 0 0 0 0 map odom
-rosrun tf2_ros static_transform_publisher 0 0 0 0 0 0 odom base_link
-rosrun tf2_ros static_transform_publisher 0 0 0 0 0 0 base_link os_sensor
+rosrun tf2_ros static_transform_publisher 0 0 0 0 0 0 map odom &
+rosrun tf2_ros static_transform_publisher 0 0 0 0 0 0 odom base_link &
+rosrun tf2_ros static_transform_publisher 0 0 0 0 0 0 base_link os_sensor 
 
 
 
