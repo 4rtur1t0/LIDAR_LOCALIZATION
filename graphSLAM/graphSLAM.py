@@ -102,7 +102,6 @@ class GraphSLAM():
         self.graph.push_back(gtsam.PriorFactorPose3(X(0), gtsam.Pose3(T.array), self.PRIOR_NOISE))
         # CAUTION: the initial T0 transform is the identity.
         self.initial_estimate.insert(X(0), gtsam.Pose3(T.array))
-        # self.current_estimate = self.initial_estimate
         self.current_estimate.insert(X(0), gtsam.Pose3(T.array))
 
     def check_estimate(self, i):

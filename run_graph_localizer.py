@@ -113,9 +113,9 @@ class LocalizationROSNode:
         # must match with the rosbag file
         # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
         # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO3-2025-06-16-13-49-28'
-        directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO4-2025-06-16-15-56-11'
+        # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO4-2025-06-16-15-56-11'
         # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO5-2025-06-16-17-53-54'
-        # directory_ground_truth_path = None
+        directory_ground_truth_path = None
         self.robotpath = PosesBuffer(maxlen=10000)
         if directory_ground_truth_path is not None:
             self.robotpath.read_data_tum(directory=directory_ground_truth_path, filename='/robot0/SLAM/data_poses_tum.txt')
@@ -151,11 +151,14 @@ class LocalizationROSNode:
 
         pose = Pose()
         pose.from_message(msg.pose.pose)
+        # In the first odometry received. add the timestamp to the list of times in the graph and also publish
         if self.last_odom_pose is None:
             self.last_odom_pose = pose
             # save initial graphslam time
             self.graphslam_times = np.array([timestamp])
-
+            # this publishes the first node in the graph
+            self.publish_graph()
+            # please, do not return here, the pose has to be added to the odom_buffer
         # storing odometry buffer, but not really using it
         self.odom_buffer.append(pose, timestamp)
         start_time = time.time()
@@ -240,18 +243,15 @@ class LocalizationROSNode:
 
     def publish_pose(self, T, timestamp):
         print('Publishing last pose:')
-        position = T.pos()# print(pose)
+        position = T.pos()
         orientation = T.Q()
         msg = Odometry()
         msg.header.stamp = rospy.Time.from_sec(timestamp)
-        # caution: the frame_id stores the index in the graph, so that the graph localizer in map can
-        # also find a localization in the map and return.
         msg.header.frame_id = "map"
         msg.child_frame_id = "odom"
         msg.pose.pose.position.x = position[0]
         msg.pose.pose.position.y = position[1]
         msg.pose.pose.position.z = position[2]
-        # q = pose.rotation().toQuaternion()
         msg.pose.pose.orientation.x = orientation.qx
         msg.pose.pose.orientation.y = orientation.qy
         msg.pose.pose.orientation.z = orientation.qz

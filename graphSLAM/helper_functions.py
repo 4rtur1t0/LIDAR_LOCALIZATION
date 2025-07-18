@@ -99,41 +99,41 @@ def update_sm_observations(nodeloc):
     nodeloc.optimization_index += 1
 
 
-
-def update_gps_observations(nodeloc):
-    #################################################
-    # integrate GPS measurements (interpolated)
-    #################################################
-    if len(nodeloc.gps_buffer) == 0:
-        print("\033[91mCaution!!! No gps in buffer yet.\033[0m")
-        return
-    if len(nodeloc.graphslam_times) == 0:
-        print("\033[91mCaution!!! No graph yet.\033[0m")
-        return
-    # iterate from the last processed index in the graph, look for GPS and add them to the graph
-    first_index_in_graphslam = nodeloc.last_processed_index['GPS']
-    # running through the nodes of the graph (non visited yet). Looking for gps observations at that time
-    for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times)):
-        time_graph1 = nodeloc.graphslam_times[i]
-        gpsi, _ = nodeloc.gps_buffer.interpolated_gps_at_time(time_graph1, delta_threshold_s=1.0)
-        # reset proc time
-        nodeloc.gps_buffer.last_processed_time = time_graph1
-        if gpsi is None:
-            print('NO GPS FOR this graphslam node, SKIPPING')
-            continue
-        print('Tiempo GPS', time_graph1 - nodeloc.start_time)
-        # add a GPS factor on node i of the graph.aution
-        print('ADD GPS FACTOR!!!')
-        nodeloc.graphslam.add_GPSfactor(utmx=gpsi.x,
-                                        utmy=gpsi.y,
-                                        utmaltitude=gpsi.altitude,
-                                        gpsnoise=np.sqrt(gpsi.position_covariance),
-                                        i=i)
-        # store the touched index in the graph
-        nodeloc.graphslam_observations_indices['GPS'].append(i)
-        # store the last index. Next time, the graph is iterated from this
-        nodeloc.last_processed_index['GPS'] = i + 1
-    nodeloc.optimization_index += 1
+#
+# def update_gps_observations(nodeloc):
+#     #################################################
+#     # integrate GPS measurements (interpolated)
+#     #################################################
+#     if len(nodeloc.gps_buffer) == 0:
+#         print("\033[91mCaution!!! No gps in buffer yet.\033[0m")
+#         return
+#     if len(nodeloc.graphslam_times) == 0:
+#         print("\033[91mCaution!!! No graph yet.\033[0m")
+#         return
+#     # iterate from the last processed index in the graph, look for GPS and add them to the graph
+#     first_index_in_graphslam = nodeloc.last_processed_index['GPS']
+#     # running through the nodes of the graph (non visited yet). Looking for gps observations at that time
+#     for i in range(first_index_in_graphslam, len(nodeloc.graphslam_times)):
+#         time_graph1 = nodeloc.graphslam_times[i]
+#         gpsi, _ = nodeloc.gps_buffer.interpolated_gps_at_time(time_graph1, delta_threshold_s=1.0)
+#         # reset proc time
+#         nodeloc.gps_buffer.last_processed_time = time_graph1
+#         if gpsi is None:
+#             print('NO GPS FOR this graphslam node, SKIPPING')
+#             continue
+#         print('Tiempo GPS', time_graph1 - nodeloc.start_time)
+#         # add a GPS factor on node i of the graph.aution
+#         print('ADD GPS FACTOR!!!')
+#         nodeloc.graphslam.add_GPSfactor(utmx=gpsi.x,
+#                                         utmy=gpsi.y,
+#                                         utmaltitude=gpsi.altitude,
+#                                         gpsnoise=np.sqrt(gpsi.position_covariance),
+#                                         i=i)
+#         # store the touched index in the graph
+#         nodeloc.graphslam_observations_indices['GPS'].append(i)
+#         # store the last index. Next time, the graph is iterated from this
+#         nodeloc.last_processed_index['GPS'] = i + 1
+#     nodeloc.optimization_index += 1
 
 
 def update_prior_map_observations(nodeloc):

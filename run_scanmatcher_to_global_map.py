@@ -14,7 +14,7 @@ import rospy
 from nav_msgs.msg import Odometry
 from observations.lidarbuffer import LidarBuffer, LidarScan
 from observations.posesbuffer import PosesBuffer, Pose
-from sensor_msgs.msg import PointCloud2
+# from sensor_msgs.msg import PointCloud2
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from observations.posesbuffer import PosesBuffer
 import time
@@ -22,8 +22,11 @@ import open3d as o3d
 import numpy as np
 from artelib.homogeneousmatrix import HomogeneousMatrix
 import matplotlib.pyplot as plt
-import pandas as pd
+# import pandas as pd
 from collections import deque
+import sensor_msgs.point_cloud2 as pc2
+from sensor_msgs.msg import PointCloud2, PointField
+from std_msgs.msg import Header
 
 fig1, ax1 = plt.subplots(figsize=(12, 8))
 ax1.set_title('SCANMATCHING path positions')
@@ -46,6 +49,8 @@ INITIAL_ESTIMATED_POSE = '/localized_pose'
 # WE ARE PUBLISHING THE PRIOR ESTIMATION HERE, as a result of the localization in the map
 MAP_SM_GLOBAL_POSE_TOPIC = '/map_sm_global_pose'
 
+# PUBLISH THE 3D pointcloud global map
+GLOBAL_MAP_TOPIC = '/global_map'
 
 class GlobalMap():
     def __init__(self, map_directory, map_filename):
@@ -55,12 +60,11 @@ class GlobalMap():
         self.global_map = o3d.io.read_point_cloud(map_filename)
         print("[INFO] Global map loaded with", len(self.global_map.points), "points.")
         # 3. Downsample for faster processing the global map
-        voxel_size_global_map = 0.2  # adjust as needed
-        self.global_map.voxel_down_sample(voxel_size_global_map)
+        # voxel_size_global_map = 0.2  # adjust as needed
+        # self.global_map.voxel_down_sample(voxel_size_global_map)
         # 4. Estimate normals (required for registration)
         self.global_map.estimate_normals(o3d.geometry.KDTreeSearchParamHybrid(radius=0.3,
                                                                               max_nn=50))
-
 
     def perform_global_localization_of_scan_i(self, local_scan, initial_guess, show=False):
         """
@@ -136,6 +140,10 @@ class GlobalScanMatchingROSNode:
         self.global_map = GlobalMap(map_directory=MAP_DIRECTORY, map_filename='global_map.pcd')
         print('Map loaded!')
 
+        print("Voxelizando la nube...")
+        pointcloud_publish = self.global_map.global_map.voxel_down_sample(voxel_size=0.5)
+        print(f"Tamaño nube voxelizada: {np.asarray(pointcloud_publish.points).shape}")
+
         # ROS STUFFF
         print('Initializing global scanmatching node!')
         rospy.init_node('scanmatcher_to_map_node')
@@ -155,6 +163,8 @@ class GlobalScanMatchingROSNode:
         rospy.Timer(rospy.Duration(5), self.plot_timer_callback)
         # Publisher
         self.pub = rospy.Publisher(MAP_SM_GLOBAL_POSE_TOPIC, Odometry, queue_size=10)
+        self.map_publisher = rospy.Publisher(GLOBAL_MAP_TOPIC, PointCloud2, queue_size=1, latch=True)
+        self.publish_map(pointcloud_publish)
 
         # print info.
         self.all_initial_estimations = [] # initial without map
@@ -326,6 +336,34 @@ class GlobalScanMatchingROSNode:
         msg.pose.pose.orientation.z = orientation.qz
         msg.pose.pose.orientation.w = orientation.qw
         self.pub.publish(msg)
+
+    def publish_map(self, pointcloud):
+        """
+        Publish the global pointcloud map
+        """
+        print("##### Calling publish_map.")
+        points = np.asarray(pointcloud.points)
+
+        # Crea el header
+        header = Header()
+        header.stamp = rospy.Time.now()
+        header.frame_id = "map"
+
+        # Crea la estructura de los campos (x, y, z)
+        fields = [
+            PointField('x', 0, PointField.FLOAT32, 1),
+            PointField('y', 4, PointField.FLOAT32, 1),
+            PointField('z', 8, PointField.FLOAT32, 1)
+        ]
+
+        # Convierte los puntos a una lista de tuplas
+        point_list = [tuple(p) for p in points]
+
+        # Crea el mensaje PointCloud2
+        pc2_msg = pc2.create_cloud(header, fields, point_list)
+
+        self.map_publisher.publish(pc2_msg)
+        print("##### Mapa publicado!!!!!!.")
 
     def plot_timer_callback(self, event):
         print('Plotting info')
