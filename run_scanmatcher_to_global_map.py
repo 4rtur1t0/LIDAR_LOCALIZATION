@@ -156,7 +156,7 @@ class GlobalScanMatchingROSNode:
         print('Subscribing to PCD, GNSS')
         print('WAITING FOR MESSAGES!')
         print('NODE PARAMETERS: ')
-        print(PARAMETERS.get('scanmatcher_to_map'))
+        print(PARAMETERS.config.get('scanmatcher_to_map'))
         print('TOPICS: ')
         print('INPUT POINTCLOUD TOPIC: ', POINTCLOUD_TOPIC)
         print('INPUT INITIAL ESTIMATED LOCALIZED POSE TOPIC: ', INITIAL_ESTIMATED_POSE)
