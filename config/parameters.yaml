@@ -10,7 +10,7 @@ graphslam:
   th_poses: 0.15
   skip_optimization: 40 # this goes with the frequency of the odometry. If odometry is at 20Hz, optimization is performed
                         # every two seconds
-  # raw odometry
+  # input raw odometry topic
   odometry_input_topic: '/husky_velocity_controller/odom'
   # the output from a local scanmatching node
   odometry_scanmatching_input_topic: '/odometry_lidar_scanmatching'
@@ -28,14 +28,10 @@ scanmatcher:
   # distance in odometry to compute a local scanmatching
   d_poses: 0.1
   th_poses: 0.05
-
   # max time distance to find a valid odometry interpolation (given the lidar time, find odo)
   # a warning is issued and no odometry is interpolated
   delta_threshold_s: 1.0
-
   voxel_size: 0.05 # Number or null
-#  voxel_size: 0.2
-
   # find the closest points within this distance in ICP
   icp_threshold: 5.0
   # filter points by radius
