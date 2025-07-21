@@ -14,7 +14,6 @@ import rospy
 from nav_msgs.msg import Odometry
 from observations.lidarbuffer import LidarBuffer, LidarScan
 from observations.posesbuffer import PosesBuffer, Pose
-# from sensor_msgs.msg import PointCloud2
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from observations.posesbuffer import PosesBuffer
 import time
@@ -22,11 +21,11 @@ import open3d as o3d
 import numpy as np
 from artelib.homogeneousmatrix import HomogeneousMatrix
 import matplotlib.pyplot as plt
-# import pandas as pd
 from collections import deque
 import sensor_msgs.point_cloud2 as pc2
 from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Header
+from config import PARAMETERS
 
 fig1, ax1 = plt.subplots(figsize=(12, 8))
 ax1.set_title('SCANMATCHING path positions')
@@ -37,25 +36,32 @@ ax2.set_title('Computation time scanmatching')
 canvas2 = FigureCanvas(fig2)
 
 # MAP_DIRECTORY = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO5-2025-06-16-17-53-54'
-MAP_DIRECTORY = 'map_data'
+# MAP_DIRECTORY = 'map_data'
+# MAP_FILENAME = 'map_data/global_map.pcd'
+MAP_FILENAME = PARAMETERS.config.get('scanmatcher_to_map').get('map_filename')
 DELTA_THRESHOLD_S = 1.0 # for interpolation on localized_pose
 # CAUTION: this topic must be subscribed to the /ouster/points (high rate) topic
-POINTCLOUD_TOPIC = '/ouster/points_low_rate'
-# POINTCLOUD_TOPIC = '/ouster/points'
+# POINTCLOUD_TOPIC = '/ouster/points_low_rate'
+POINTCLOUD_TOPIC = PARAMETERS.config.get('scanmatcher_to_map').get('pointcloud_input_topic')
 
 # INITIAL ESTIMATION POSE, this is the output of the run_graph_localizer algorithm
-INITIAL_ESTIMATED_POSE = '/localized_pose'
+# INITIAL_ESTIMATED_POSE = '/localized_pose'
+INITIAL_ESTIMATED_POSE = PARAMETERS.config.get('scanmatcher_to_map').get('localized_pose_input_topic')
 
 # WE ARE PUBLISHING THE PRIOR ESTIMATION HERE, as a result of the localization in the map
-MAP_SM_GLOBAL_POSE_TOPIC = '/map_sm_global_pose'
+# MAP_SM_GLOBAL_POSE_TOPIC = '/map_sm_global_pose'
+MAP_SM_GLOBAL_POSE_TOPIC = PARAMETERS.config.get('scanmatcher_to_map').get('map_sm_prior_output_topic') #'/map_sm_global_pose'
 
 # PUBLISH THE 3D pointcloud global map
-GLOBAL_MAP_TOPIC = '/global_map'
+# GLOBAL_MAP_TOPIC = '/global_map'
+GLOBAL_MAP_TOPIC = PARAMETERS.config.get('scanmatcher_to_map').get('global_map')
+
 
 class GlobalMap():
-    def __init__(self, map_directory, map_filename):
+    # def __init__(self, map_directory, map_filename):
+    def __init__(self, map_filename):
         # 1. Load the global map (PCD)
-        map_filename = map_directory + '/' + map_filename
+        # map_filename = map_directory + '/' + map_filename
         print('LOADING MAP: ', map_filename)
         self.global_map = o3d.io.read_point_cloud(map_filename)
         print("[INFO] Global map loaded with", len(self.global_map.points), "points.")
@@ -136,8 +142,8 @@ class GlobalScanMatchingROSNode:
         # store the received pointclouds
         self.lidar_queue = deque(maxlen=100)
         # LOAD THE MAP
-        print('Loading MAP')
-        self.global_map = GlobalMap(map_directory=MAP_DIRECTORY, map_filename='global_map.pcd')
+        print('Loading MAP: ', MAP_FILENAME)
+        self.global_map = GlobalMap(map_filename=MAP_FILENAME)
         print('Map loaded!')
 
         print("Voxelizando la nube...")
@@ -149,11 +155,17 @@ class GlobalScanMatchingROSNode:
         rospy.init_node('scanmatcher_to_map_node')
         print('Subscribing to PCD, GNSS')
         print('WAITING FOR MESSAGES!')
+        print('NODE PARAMETERS: ')
+        print(PARAMETERS.get('scanmatcher_to_map'))
+        print('TOPICS: ')
+        print('INPUT POINTCLOUD TOPIC: ', POINTCLOUD_TOPIC)
+        print('INPUT INITIAL ESTIMATED LOCALIZED POSE TOPIC: ', INITIAL_ESTIMATED_POSE)
+        print('OUTPUT SCANMATCHED POSE, LOCALIZED TO MAP POSE TOPIC: ', MAP_SM_GLOBAL_POSE_TOPIC)
+        print('OUTPUT GLOBAL PCD TOPIC: ', GLOBAL_MAP_TOPIC)
 
         # Subscriptions to the pointcloud topic and to the
-        # CAution!!! There must be a delay between the received pointcloud and the
-        # /localized_pose trajectory. In particular, the pointcloud times must be
-        # retarded with respect to the /localized_pose
+        # CAution!!! There must be a delay between the received pointcloud and the /localized_pose trajectory.
+        # In particular, the pointcloud times must be retarded with respect to the /localized_pose
         # Caution: queue_size must be 1 or 2 approxx
         rospy.Subscriber(POINTCLOUD_TOPIC, PointCloud2, self.pc_callback, queue_size=10)
         # subscription to the current localized pose
@@ -161,9 +173,11 @@ class GlobalScanMatchingROSNode:
 
         # Set up a timer to periodically update the png plots
         rospy.Timer(rospy.Duration(5), self.plot_timer_callback)
+
         # Publisher
         self.pub = rospy.Publisher(MAP_SM_GLOBAL_POSE_TOPIC, Odometry, queue_size=10)
         self.map_publisher = rospy.Publisher(GLOBAL_MAP_TOPIC, PointCloud2, queue_size=1, latch=True)
+        print('Publishing global pointcloud PCD map in ROS to: ', GLOBAL_MAP_TOPIC)
         self.publish_map(pointcloud_publish)
 
         # print info.

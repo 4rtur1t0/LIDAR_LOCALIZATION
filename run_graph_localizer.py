@@ -48,13 +48,16 @@ fig3, ax3 = plt.subplots(figsize=(6, 4))
 ax3.set_title('OBSERVATIONS INDICES IN GRAPH')
 canvas3 = FigureCanvas(fig3)
 
-ODOMETRY_TOPIC = '/husky_velocity_controller/odom'
-ODOMETRY_SCANMATCHING_LIDAR_TOPIC='/odometry_lidar_scanmatching'
-# GNSS_TOPIC = '/gnss/fix_fake'
-MAP_SM_GLOBAL_POSE_TOPIC = '/map_sm_global_pose'
+# ODOMETRY_TOPIC = '/husky_velocity_controller/odom'
+ODOMETRY_TOPIC = PARAMETERS.config.get('graphslam').get('odometry_input_topic')
+# ODOMETRY_SCANMATCHING_LIDAR_TOPIC ='/odometry_lidar_scanmatching'
+ODOMETRY_SCANMATCHING_LIDAR_TOPIC = PARAMETERS.config.get('graphslam').get('odometry_scanmatching_input_topic')
+# MAP_SM_GLOBAL_POSE_TOPIC = '/map_sm_global_pose'
+MAP_SM_GLOBAL_POSE_TOPIC = PARAMETERS.config.get('graphslam').get('map_sm_global_pose')
 # the localized estimation, based on odometry, local scanmatching and global scanmatching
-OUTPUT_TOPIC = '/localized_pose'
-
+# OUTPUT_TOPIC = '/localized_pose'
+OUTPUT_TOPIC = PARAMETERS.config.get('graphslam').get('localized_pose_output_topic')
+# GNSS_TOPIC = '/gnss/fix_fake'
 
 class LocalizationROSNode:
     def __init__(self):
@@ -125,6 +128,8 @@ class LocalizationROSNode:
         rospy.init_node('graph_localization_node')
         print('Subscribing to PCD, GNSS')
         print('WAITING FOR MESSAGES!')
+        print('PARAMETERS')
+        print(PARAMETERS.config.get('graphslam'))
 
         # Subscriptions
         rospy.Subscriber(ODOMETRY_TOPIC, Odometry, self.odom_callback)
@@ -139,6 +144,12 @@ class LocalizationROSNode:
         # TIME measurement
         self.update_graph_timer_callback_times = []
         self.publication_delay_times = []
+
+        print('TOPICS:')
+        print('SUBSCRIBED TO INPUT ODOMETRY TOPIC: ', ODOMETRY_TOPIC)
+        print('SUBSCRIBED TO INPUT SCANMATCHING ODOMETRY TOPIC: ', ODOMETRY_SCANMATCHING_LIDAR_TOPIC)
+        print('SUBSCRIBED TO INPUT SCANMATCHING TO MAP GLOBAL PRIOR: ', MAP_SM_GLOBAL_POSE_TOPIC)
+        print('PUBLISHING OUTPUT ESTIMATED POSE: ', OUTPUT_TOPIC)
 
     def odom_callback(self, msg):
         """

@@ -10,9 +10,22 @@ graphslam:
   th_poses: 0.15
   skip_optimization: 40 # this goes with the frequency of the odometry. If odometry is at 20Hz, optimization is performed
                         # every two seconds
+  # raw odometry
+  odometry_input_topic: '/husky_velocity_controller/odom'
+  # the output from a local scanmatching node
+  odometry_scanmatching_input_topic: '/odometry_lidar_scanmatching'
+  map_sm_global_pose: '/map_sm_global_pose'
+  # the output from a scanmatching to map node (global scanmatching)
+  localized_pose_output_topic: '/localized_pose'
 
 # the scanmatcher is used for sequential scanmatching and to find registrations between non-consecutive pointclouds
 scanmatcher:
+  odometry_input_topic: '/husky_velocity_controller/odom'
+  # from a lidar
+  pointcloud_input_topic: '/ouster/points_low_rate'
+  # the output estimated odometry from local scanmatching
+  odometry_output_topic: '/odometry_lidar_scanmatching'
+  # distance in odometry to compute a local scanmatching
   d_poses: 0.1
   th_poses: 0.05
 
@@ -44,16 +57,17 @@ scanmatcher:
     # a delay in seconds to synchronize odometry and lidar info
     delay_seconds_lidar_odometry: 0.2
 
-
-#  threads:
-#    # process scanmatching between pointclouds every 0.35 seconds
-#    # should be approx. equal to the period between lidar scans
-#    seconds_period_scanmatching_thread: 0.5
-#    # publish the last transform 0.35 seconds
-#    seconds_period_publish_thread: 0.1
-#    # plot info in plot.png
-#    seconds_period_plot_info_thread: 1.0
-
+scanmatcher_to_map:
+  # from a lidar
+  pointcloud_input_topic: '/ouster/points_low_rate'
+  # the input localized pose
+  localized_pose_input_topic: '/localized_pose'
+  # the localized pose is scanmatched to the global map and this is the output
+  map_sm_prior_output_topic: '/map_sm_global_pose'
+  # the node also publishes the global map, as read from the file
+  global_map: '/global_map'
+  # the map filename
+  map_filename: 'map_data/global_map.pcd'
 
 gps:
   delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
