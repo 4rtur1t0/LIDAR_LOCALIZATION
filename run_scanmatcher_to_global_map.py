@@ -146,7 +146,7 @@ class GlobalScanMatchingROSNode:
         self.global_map = GlobalMap(map_filename=MAP_FILENAME)
         print('Map loaded!')
 
-        print("Voxelizando la nube...")
+        print("Voxelizando la nube for publishing...")
         pointcloud_publish = self.global_map.global_map.voxel_down_sample(voxel_size=0.5)
         print(f"Tamaño nube voxelizada: {np.asarray(pointcloud_publish.points).shape}")
 

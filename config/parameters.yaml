@@ -63,7 +63,8 @@ scanmatcher_to_map:
   # the node also publishes the global map, as read from the file
   global_map: '/global_map'
   # the map filename
-  map_filename: 'map_data/global_map.pcd'
+#  map_filename: 'map_data/global_map.pcd'
+  map_filename: 'map_data/global_map_filtered.pcd'
 
 gps:
   delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
