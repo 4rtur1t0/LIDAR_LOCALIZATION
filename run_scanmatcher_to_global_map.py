@@ -38,9 +38,6 @@ fig2, ax2 = plt.subplots(figsize=(12, 8))
 ax2.set_title('Computation time scanmatching')
 canvas2 = FigureCanvas(fig2)
 
-# MAP_DIRECTORY = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO5-2025-06-16-17-53-54'
-# MAP_DIRECTORY = 'map_data'
-
 MAP_FILENAME = PARAMETERS.config.get('scanmatcher_to_map').get('map_filename')
 DELTA_THRESHOLD_S = 1.0 # for interpolation on localized_pose
 # CAUTION: this topic must be subscribed to the /ouster/points (high rate) topic
