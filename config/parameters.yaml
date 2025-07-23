@@ -3,13 +3,17 @@
 odo:
   delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
 
+# a graphslam integrating, odometry, local scanmatching and scanmatching against the global map (given an
+# approximate initial estimate)
 graphslam:
   delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
-  #cte a new state whenever the odometry moves more than these thresholds
+  # create a new state whenever the odometry moves more than these thresholds in distance and yaw.
   d_poses: 0.3
   th_poses: 0.15
-  skip_optimization: 40 # this goes with the frequency of the odometry. If odometry is at 20Hz, optimization is performed
-                        # every two seconds
+  # skip optimization every x steps. The optimization steps go at the frequency of the odometry.
+  # If odometry is at 20Hz, and skip_optimization=40, then the optimization of the graph is performed
+  # every two seconds
+  skip_optimization: 40
   # input raw odometry topic
   odometry_input_topic: '/husky_velocity_controller/odom'
   # the output from a local scanmatching node
@@ -53,12 +57,16 @@ scanmatcher:
     # a delay in seconds to synchronize odometry and lidar info
     delay_seconds_lidar_odometry: 0.2
 
+# A ICP scanmatching algorithm against the global map (given an approximate initial estimate)
+# the initial estimate is the /localized_pose as output of the graphslam algorithm. A prior is
+# output that also is published and included in the grapshslam algoritm
 scanmatcher_to_map:
   # from a lidar
   pointcloud_input_topic: '/ouster/points_low_rate'
+#  pointcloud_input_topic: '/ouster/points'
   # the input localized pose
   localized_pose_input_topic: '/localized_pose'
-  # the localized pose is scanmatched to the global map and this is the output
+  # the localized pose is scanmatched to the global map and this is the output that is published
   map_sm_prior_output_topic: '/map_sm_global_pose'
   # the node also publishes the global map, as read from the file
   global_map: '/global_map'
@@ -66,6 +74,7 @@ scanmatcher_to_map:
 #  map_filename: 'map_data/global_map.pcd'
   map_filename: 'map_data/global_map_filtered.pcd'
 
+# unused now
 gps:
   delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
   min_status: 0 # minimum status for a GPS to be valid

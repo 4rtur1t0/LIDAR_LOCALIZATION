@@ -2,8 +2,7 @@
 A simple Scanmatcher for LiDAR pointclouds.
 Publishes a global estimated pose based on the first odometry reading found.
 No GPS or IMU is integrated.
-Uses Open3d for ICP
-
+Uses Open3d for ICP.
 """
 import rospy
 import numpy as np
@@ -20,13 +19,11 @@ from sensor_msgs.msg import PointCloud2
 from scanmatcher.scanmatcher import ScanMatcher
 import time
 
-
-# ODOMETRY_TOPIC = '/husky_velocity_controller/odom'
+# the odometry input topic (used as initial estimation)
 ODOMETRY_TOPIC = PARAMETERS.config.get('scanmatcher').get('odometry_input_topic')
-# POINTCLOUD_TOPIC = '/ouster/points_low_rate'
+# the point cloud Lidar topic
 POINTCLOUD_TOPIC = PARAMETERS.config.get('scanmatcher').get('pointcloud_input_topic')
-# the output estimation
-# OUTPUT_TOPIC = '/odometry_lidar_scanmatching'
+# the output estimation of the scanmatching odometry
 OUTPUT_TOPIC = PARAMETERS.config.get('scanmatcher').get('odometry_output_topic')
 
 fig1, ax1 = plt.subplots(figsize=(12, 8))
@@ -36,7 +33,6 @@ canvas1 = FigureCanvas(fig1)
 fig2, ax2 = plt.subplots(figsize=(12, 8))
 ax2.set_title('Computation time scanmatching')
 canvas2 = FigureCanvas(fig2)
-
 
 
 def compute_rel_distance(odo1, odo2):

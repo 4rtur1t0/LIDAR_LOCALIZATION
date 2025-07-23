@@ -1,14 +1,17 @@
 """
-Using GTSAM in a GraphSLAM context.
-We are integrating odometry, scanmatching odometry and (if present) GPS.
-    The state X is the position and orientation frame of the robot, placed on the GPS sensor.
+    A node that performs scanmatching against a global map.
+    Algorithm:
+    - a) This node subscribes to the localized_pose topic. The localized poses are stored in a buffer.
+    - b) Given the last pointcloud received, the closest initial pose is found by interpolation, considering
+    the buffered localized poses.
+    - c) An ICP scanmatching procedure is carried out:
+            c.1) A submap is retrieved around the interpolated localized pose (initial pose).
+            c.2) An ICP is carried out, to obtain a refined estimation given the current pointcloudn
+            and the submap.
+            c.3) The resulting refined position is published as a priro on localized poses. This priro
+            is later included in the graph localizer process (run_grpah_localizer node).
 
-
-    This node subscribes to the localized_pose topic.
-    The localized_pose topic is initially published by the localization node.
-    The initial pose is used to find a number of close pointclouds in the map. A registration is then performed
-    As a result, we end up having another prior3Dfactor observation on the state X(i)
-
+    As a result, we end up having another prior3Dfactor observation on the state X(i).
 """
 import rospy
 from nav_msgs.msg import Odometry
@@ -37,31 +40,22 @@ canvas2 = FigureCanvas(fig2)
 
 # MAP_DIRECTORY = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO5-2025-06-16-17-53-54'
 # MAP_DIRECTORY = 'map_data'
-# MAP_FILENAME = 'map_data/global_map.pcd'
+
 MAP_FILENAME = PARAMETERS.config.get('scanmatcher_to_map').get('map_filename')
 DELTA_THRESHOLD_S = 1.0 # for interpolation on localized_pose
 # CAUTION: this topic must be subscribed to the /ouster/points (high rate) topic
-# POINTCLOUD_TOPIC = '/ouster/points_low_rate'
 POINTCLOUD_TOPIC = PARAMETERS.config.get('scanmatcher_to_map').get('pointcloud_input_topic')
-
 # INITIAL ESTIMATION POSE, this is the output of the run_graph_localizer algorithm
-# INITIAL_ESTIMATED_POSE = '/localized_pose'
 INITIAL_ESTIMATED_POSE = PARAMETERS.config.get('scanmatcher_to_map').get('localized_pose_input_topic')
-
 # WE ARE PUBLISHING THE PRIOR ESTIMATION HERE, as a result of the localization in the map
-# MAP_SM_GLOBAL_POSE_TOPIC = '/map_sm_global_pose'
 MAP_SM_GLOBAL_POSE_TOPIC = PARAMETERS.config.get('scanmatcher_to_map').get('map_sm_prior_output_topic') #'/map_sm_global_pose'
-
 # PUBLISH THE 3D pointcloud global map
-# GLOBAL_MAP_TOPIC = '/global_map'
 GLOBAL_MAP_TOPIC = PARAMETERS.config.get('scanmatcher_to_map').get('global_map')
 
 
 class GlobalMap():
-    # def __init__(self, map_directory, map_filename):
     def __init__(self, map_filename):
         # 1. Load the global map (PCD)
-        # map_filename = map_directory + '/' + map_filename
         print('LOADING MAP: ', map_filename)
         self.global_map = o3d.io.read_point_cloud(map_filename)
         print("[INFO] Global map loaded with", len(self.global_map.points), "points.")
@@ -120,11 +114,9 @@ class GlobalMap():
         print("[RESULT]", reg_result)
 
         if show:
-            # 7. Visualize result
             local_scan.transform(reg_result.transformation)
             # filter height of result
             points = np.asarray(global_map_temp.points)
-            # [x, y, z] = points[:, 0], points[:, 1], points[:, 2]
             idx2 = np.where((points[:, 2] > -1.0) & (points[:, 2] < 1.5))
             global_map_filtered = o3d.geometry.PointCloud(o3d.utility.Vector3dVector(points[idx2]))
             global_map_filtered.paint_uniform_color([1.0, 0, 0])

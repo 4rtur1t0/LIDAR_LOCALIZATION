@@ -72,15 +72,16 @@ ARUCO_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([aruco_rpy_sigma*np.pi/1
                                                             aruco_xyz_sigma]))
 
 class GraphSLAM():
-    def __init__(self, T0, Tlidar_gps, Tlidar_cam, max_number_of_landmarks=1000):
+    # def __init__(self, T0, Tlidar_gps, Tlidar_cam, max_number_of_landmarks=1000):
+    def __init__(self, T0, max_number_of_landmarks=1000):
         self.graph = gtsam.NonlinearFactorGraph()
         self.initial_estimate = gtsam.Values()
         self.current_estimate = gtsam.Values()
         # transforms
         self.T0 = T0
-        self.Tlidar_gps = Tlidar_gps
-        self.Tgps_lidar = Tlidar_gps.inv()
-        self.Tlidar_cam = Tlidar_cam
+        # self.Tlidar_gps = Tlidar_gps
+        # self.Tgps_lidar = Tlidar_gps.inv()
+        # self.Tlidar_cam = Tlidar_cam
         # noises
         self.PRIOR_NOISE = PRIOR_NOISE
         self.SM_NOISE = SM_NOISE

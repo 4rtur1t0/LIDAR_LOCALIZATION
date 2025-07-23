@@ -26,13 +26,13 @@ from graphSLAM.helper_functions import update_sm_observations, update_odo_observ
 from nav_msgs.msg import Odometry
 from observations.gpsbuffer import GPSBuffer, GPSPosition
 from observations.posesbuffer import PosesBuffer, Pose
-from sensor_msgs.msg import NavSatFix
+# from sensor_msgs.msg import NavSatFix
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from graphSLAM.graphSLAM import GraphSLAM
-from artelib.homogeneousmatrix import HomogeneousMatrix
-from artelib.vector import Vector
-from artelib.euler import Euler
+# from artelib.homogeneousmatrix import HomogeneousMatrix
+# from artelib.vector import Vector
+# from artelib.euler import Euler
 import time
 from config import PARAMETERS
 
@@ -48,16 +48,16 @@ fig3, ax3 = plt.subplots(figsize=(6, 4))
 ax3.set_title('OBSERVATIONS INDICES IN GRAPH')
 canvas3 = FigureCanvas(fig3)
 
-# ODOMETRY_TOPIC = '/husky_velocity_controller/odom'
+# the odometry input topic
 ODOMETRY_TOPIC = PARAMETERS.config.get('graphslam').get('odometry_input_topic')
-# ODOMETRY_SCANMATCHING_LIDAR_TOPIC ='/odometry_lidar_scanmatching'
+# the odometry scanmatching topic
 ODOMETRY_SCANMATCHING_LIDAR_TOPIC = PARAMETERS.config.get('graphslam').get('odometry_scanmatching_input_topic')
-# MAP_SM_GLOBAL_POSE_TOPIC = '/map_sm_global_pose'
+# the priors on the pose as estimated by the scanmatching to map algorithm
 MAP_SM_GLOBAL_POSE_TOPIC = PARAMETERS.config.get('graphslam').get('map_sm_global_pose')
-# the localized estimation, based on odometry, local scanmatching and global scanmatching
-# OUTPUT_TOPIC = '/localized_pose'
+# the localized estimation, based on odometry, local scanmatching and global scanmatching '/localized_pose'
 OUTPUT_TOPIC = PARAMETERS.config.get('graphslam').get('localized_pose_output_topic')
 # GNSS_TOPIC = '/gnss/fix_fake'
+
 
 class LocalizationROSNode:
     def __init__(self):
@@ -67,12 +67,13 @@ class LocalizationROSNode:
         #               'qx': 0.00, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0})
         # transforms
         T0 = pose0.T() #HomogeneousMatrix()
-        # T LiDAR-GPS
-        Tlidar_gps = HomogeneousMatrix(Vector([0.36, 0, -0.4]), Euler([0, 0, 0]))
-        # T LiDAR-camera
-        Tlidar_cam = HomogeneousMatrix(Vector([0, 0.17, 0]), Euler([0, np.pi / 2, -np.pi / 2]))
+        # T LiDAR-GPS unused
+        # Tlidar_gps = HomogeneousMatrix(Vector([0.36, 0, -0.4]), Euler([0, 0, 0]))
+        # T LiDAR-camera unused
+        # Tlidar_cam = HomogeneousMatrix(Vector([0, 0.17, 0]), Euler([0, np.pi / 2, -np.pi / 2]))
         # create the graphslam graph
-        self.graphslam = GraphSLAM(T0=T0, Tlidar_gps=Tlidar_gps, Tlidar_cam=Tlidar_cam)
+        # self.graphslam = GraphSLAM(T0=T0, Tlidar_gps=Tlidar_gps, Tlidar_cam=Tlidar_cam)
+        self.graphslam = GraphSLAM(T0=T0)
         self.graphslam.init_graph()
 
         # store odometry in deque fashion
@@ -116,9 +117,9 @@ class LocalizationROSNode:
         # must match with the rosbag file
         # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO2-2025-03-25-16-54-17'
         # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO3-2025-06-16-13-49-28'
-        # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO4-2025-06-16-15-56-11'
+        directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO4-2025-06-16-15-56-11'
         # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO5-2025-06-16-17-53-54'
-        directory_ground_truth_path = None
+        # directory_ground_truth_path = None
         self.robotpath = PosesBuffer(maxlen=10000)
         if directory_ground_truth_path is not None:
             self.robotpath.read_data_tum(directory=directory_ground_truth_path, filename='/robot0/SLAM/data_poses_tum.txt')
@@ -221,16 +222,16 @@ class LocalizationROSNode:
         if utmposition is not None:
             self.gps_buffer.append(utmposition, timestamp)
 
-    def aruco_observation_callback(self, msg):
-        """
-            Get last odom reading and append to buffer.
-        """
-        timestamp = msg.header.stamp.to_sec()
-        pose = Pose()
-        pose.from_message(msg.pose)
-        self.aruco_observations_buffer.append(pose, timestamp)
-        aruco_id = int(msg.header.frame_id)
-        self.aruco_observations_ids.append(aruco_id)
+    # def aruco_observation_callback(self, msg):
+    #     """
+    #         Get last odom reading and append to buffer.
+    #     """
+    #     timestamp = msg.header.stamp.to_sec()
+    #     pose = Pose()
+    #     pose.from_message(msg.pose)
+    #     self.aruco_observations_buffer.append(pose, timestamp)
+    #     aruco_id = int(msg.header.frame_id)
+    #     self.aruco_observations_ids.append(aruco_id)
 
     def publish_graph(self):
         """

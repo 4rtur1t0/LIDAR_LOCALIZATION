@@ -1,14 +1,6 @@
 """
-Using GTSAM in a GraphSLAM context.
-We are integrating odometry, scanmatching odometry and (if present) GPS.
-    The state X is the position and orientation frame of the robot, placed on the GPS sensor.
-
-
-    This node subscribes to the localized_pose topic.
-    The localized_pose topic is initially published by the localization node.
-    The initial pose is used to find a number of close pointclouds in the map. A registration is then performed
-    As a result, we end up having another prior3Dfactor observation on the state X(i)
-
+    A node that subscribes to the important topics and prints a
+    plot (png, in /plots) with the last published times. For debugging purposes.
 """
 import rospy
 import numpy as np
@@ -16,6 +8,7 @@ from nav_msgs.msg import Odometry
 from sensor_msgs.msg import NavSatFix, PointCloud2
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+from config import PARAMETERS
 
 fig1, ax1 = plt.subplots(figsize=(12, 8))
 ax1.set_title('SCANMATCHING path positions')
@@ -25,15 +18,14 @@ fig2, ax2 = plt.subplots(figsize=(12, 8))
 ax2.set_title('Computation time scanmatching')
 canvas2 = FigureCanvas(fig2)
 
-
-ODOMETRY_TOPIC = '/husky_velocity_controller/odom'
+# subscribing to these topics and checking times
+ODOMETRY_TOPIC = PARAMETERS.config.get('graphslam').get('odometry_input_topic')
 # CAUTION: this topic must be subscribed to the /ouster/points (high rate) topic
-POINTCLOUD_TOPIC = '/ouster/points_low_rate'
-ODOMETRY_SCANMATCHING_TOPIC = '/odometry_lidar_scanmatching'
-PRIOR_SM_GLOBAL_MAP_POSE = '/map_sm_global_pose'
-# INITIAL ESTIMATION POSE, this is the output of the run_graph_localizer algorithm
-LOCALIZED_POSE = '/localized_pose'
-
+POINTCLOUD_TOPIC = PARAMETERS.config.get('scanmatcher').get('pointcloud_input_topic')
+ODOMETRY_SCANMATCHING_TOPIC = PARAMETERS.config.get('scanmatcher').get('odometry_output_topic')
+PRIOR_SM_GLOBAL_MAP_POSE = PARAMETERS.config.get('graphslam').get('map_sm_global_pose')
+# ESTIMATED POSE, this is the output of the run_graph_localizer algorithm
+LOCALIZED_POSE = PARAMETERS.config.get('graphslam').get('localized_pose_output_topic')
 
 
 class CheckTimestampsNode:
@@ -45,13 +37,16 @@ class CheckTimestampsNode:
         self.localized_pose_times = []
         self.prior_sm_gloal_map_pose_times = []
 
-        # self.gnss_times =  []
         print('Initializing check times node!')
         rospy.init_node('check_times_node')
         print('Subscribing to ODOMETRY, scanmatching, scanmatching global and pointclouds')
+        print('ODOMETRY TOPIC: ', ODOMETRY_TOPIC)
+        print('ODOMETRY SCANMATCHING TOPIC: ', ODOMETRY_SCANMATCHING_TOPIC)
+        print('POINTCLOUD TOPIC: ', POINTCLOUD_TOPIC)
+        print('SCANMATCHING TO MAP TOPIC: ', PRIOR_SM_GLOBAL_MAP_POSE)
+        print('GRAPH ESTIMATED POSE GTSAM: ', LOCALIZED_POSE)
 
-        # Subscriptions to the pointcloud topic and to the
-        # current localized pose
+        # Subscriptions to the TOPICS
         rospy.Subscriber(ODOMETRY_TOPIC, Odometry, self.odometry_callback)
         rospy.Subscriber(POINTCLOUD_TOPIC, PointCloud2, self.pc_callback)
         rospy.Subscriber(ODOMETRY_SCANMATCHING_TOPIC, Odometry, self.odometry_scanmatching_callback)
@@ -63,18 +58,18 @@ class CheckTimestampsNode:
 
     def odometry_callback(self, msg):
         """
-            Get last odometry reading and append to buffer.
-            Directly calling update_odo_observations, which should be fast at every step.
+            Get last odometry timestamp.
+            Robot odometry.
         """
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
             self.start_time = timestamp
-        # storing odometry buffer, but not really using it
         self.odometry_times.append(timestamp)
 
     def odometry_scanmatching_callback(self, msg):
         """
-            Get last scanmatching odometry reading and append to buffer.
+            Get last scanmatching timestamp.ç
+            published by the run_scanmatcher.py node.
         """
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
@@ -83,7 +78,8 @@ class CheckTimestampsNode:
 
     def pc_callback(self, msg):
         """
-        Get last pcd reading and append to buffer.
+        Get last pcd timestamp.
+        published by the lidar
         """
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
@@ -92,11 +88,8 @@ class CheckTimestampsNode:
 
     def localized_pose_callback(self, msg):
         """
-            Obtain the last estimations on the robot path
-            This /localized_pose is used as an initial estimation and usually obtained from the localization node itself.
-            This should be the /localized_pose topic, which maintains
-            the last localization with all the information, excluding
-            the localization with respec to the map.
+            Obtain the last timestamp on the estimated pose on the robot path
+            published by run_graph_localizer.py.
         """
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
@@ -105,11 +98,8 @@ class CheckTimestampsNode:
 
     def prior_sm_gloal_map_pose_callback(self, msg):
         """
-            Obtain the last estimations on the robot path
-            This /localized_pose is used as an initial estimation and usually obtained from the localization node itself.
-            This should be the /localized_pose topic, which maintains
-            the last localization with all the information, excluding
-            the localization with respec to the map.
+            Obtain the last timestamp on the estimations against the global pcd map.
+            (run_scanmatcher_to_global_map.py)
         """
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
