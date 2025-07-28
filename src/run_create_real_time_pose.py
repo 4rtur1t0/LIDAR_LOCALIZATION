@@ -1,9 +1,12 @@
+#!/home/administrator/husky_noetic_ws/src/husky_3d_localization/.venv/bin/python3
 """
-A simple Scanmatcher for LiDAR pointclouds.
-Publishes a global estimated pose based on the first odometry reading found.
-No GPS or IMU is integrated.
-Uses Open3d for ICP.
+Given the last received /localized_pose, the script generates a real-time odometry relative to this last localized
+pose.
 """
+
+
+import sys
+sys.path.append('/home/administrator/husky_noetic_ws/src/husky_3d_localization/')  # Add the parent directory to the path
 import rospy
 import numpy as np
 from artelib.homogeneousmatrix import HomogeneousMatrix
@@ -18,115 +21,142 @@ from observations.posesbuffer import PosesBuffer
 from sensor_msgs.msg import PointCloud2
 from scanmatcher.scanmatcher import ScanMatcher
 import time
+import os
 
 # the odometry input topic (used as initial estimation)
 ODOMETRY_TOPIC = PARAMETERS.config.get('scanmatcher').get('odometry_input_topic')
-# the point cloud Lidar topic
-POINTCLOUD_TOPIC = PARAMETERS.config.get('scanmatcher').get('pointcloud_input_topic')
-# the output estimation of the scanmatching odometry
-OUTPUT_TOPIC = PARAMETERS.config.get('scanmatcher').get('odometry_output_topic')
+LOCALIZED_POSE_TOPIC = PARAMETERS.config.get('graphslam').get('localized_pose_output_topic')
 
-fig1, ax1 = plt.subplots(figsize=(12, 8))
-ax1.set_title('SCANMATCHING path positions')
-canvas1 = FigureCanvas(fig1)
+# # the output estimation of the real time pose. Completes the last localized pose adding odometry information
+OUTPUT_TOPIC = PARAMETERS.config.get('real_time_pose_node').get('localized_pose_real_time_output_topic')
+# PLOTS_PATH = PARAMETERS.config.get('scanmatcher').get('plots_path')
+# os.makedirs(PLOTS_PATH, exist_ok=True)
 
-fig2, ax2 = plt.subplots(figsize=(12, 8))
-ax2.set_title('Computation time scanmatching')
-canvas2 = FigureCanvas(fig2)
+# fig1, ax1 = plt.subplots(figsize=(12, 8))
+# ax1.set_title('SCANMATCHING path positions')
+# canvas1 = FigureCanvas(fig1)
+
+# fig2, ax2 = plt.subplots(figsize=(12, 8))
+# ax2.set_title('Computation time scanmatching')
+# canvas2 = FigureCanvas(fig2)
+
+#
+# def compute_rel_distance(odo1, odo2):
+#     Ti = odo1.T()
+#     Tj = odo2.T()
+#     Tij = Ti.inv() * Tj
+#     d = np.linalg.norm(Tij.pos())
+#     e1 = np.linalg.norm(Tij.euler()[0].abg)
+#     e2 = np.linalg.norm(Tij.euler()[1].abg)
+#     theta = min(e1, e2)
+#     print('Relative (d, theta):', d, theta)
+#     return d, theta
 
 
-def compute_rel_distance(odo1, odo2):
-    Ti = odo1.T()
-    Tj = odo2.T()
-    Tij = Ti.inv() * Tj
-    d = np.linalg.norm(Tij.pos())
-    e1 = np.linalg.norm(Tij.euler()[0].abg)
-    e2 = np.linalg.norm(Tij.euler()[1].abg)
-    theta = min(e1, e2)
-    print('Relative (d, theta):', d, theta)
-    return d, theta
-
-
-class ScanmatchingNode:
+class RealTimePoseNode:
     def __init__(self):
-        print('Initializing local scanmatching node!')
-        rospy.init_node('scanmatching_node')
-        print('Subscribing to ODOMETRY and pointclouds')
-        print('CAUTION: odometry and poinclouds are synchronized with filter messages')
+        print('Initializing the real time pose node!')
+        rospy.init_node('real_time_pose_node')
+        print('Subscribing to ODOMETRY and LOCALIZED POSE')
         print('WAITING FOR MESSAGES!')
         # Subscriptions
         rospy.Subscriber(ODOMETRY_TOPIC, Odometry, self.odom_callback)
-        rospy.Subscriber(POINTCLOUD_TOPIC, PointCloud2, self.pc_callback, queue_size=10)
+        rospy.Subscriber(LOCALIZED_POSE_TOPIC, Odometry, self.localized_pose_callback, queue_size=10)
         # Set up a timer to periodically update the plot
-        rospy.Timer(rospy.Duration(5), self.timer_callback_plot_info)
+        # rospy.Timer(rospy.Duration(5), self.timer_callback_plot_info)
 
         # Publisher
         self.pub = rospy.Publisher(OUTPUT_TOPIC, Odometry, queue_size=10)
         # stores odometry poses as a short buffer with deque
         self.odombuffer = PosesBuffer(maxlen=1000)
-        # the lidar buffer
-        # self.pcdbuffer = LidarBuffer(maxlen=300)
+        self.localized_poses_buffer = PosesBuffer(maxlen=1000)
+
         # store the results from the beginning of the experiment
-        self.relative_transforms = []
-        self.global_transforms = []
-        self.last_global_transform_published = 0
+        # self.relative_transforms = []
+        # self.global_transforms = []
+        # self.last_global_transform_published = 0
         self.start_time = None
 
-        self.times_odometry = []
-        self.times_lidar = []
+        # self.times_odometry = []
+        # self.times_lidar = []
         # the scanmatching object
-        self.scanmatcher = ScanMatcher()
-        self.timer_callback_process_scanmatching_computation_time = []
-        rospy.loginfo("ScanMatcher with odom/pc running.")
-        print('SCANMATCHER PARAMETERS')
-        print(PARAMETERS.config.get('scanmatcher'))
+        # self.scanmatcher = ScanMatcher()
+        # self.timer_callback_process_scanmatching_computation_time = []
+        rospy.loginfo("Real time pose Node with odom/localized_pose running.")
+        print('REAL TIME POSE PARAMETERS')
+        print(PARAMETERS.config.get('real_time_pose_node'))
         print('SUBSCRIBED TO INPUT ODOMETRY TOPIC: ', ODOMETRY_TOPIC)
-        print('SUBSCRIBED TO INPUT LIDAR POINTCLOUD TOPIC: ', POINTCLOUD_TOPIC)
-        print('PUBLISHING OUTPUT SCANMATCHING ODOMETRY TO: ', OUTPUT_TOPIC)
+        print('SUBSCRIBED TO INPUT LOCALIZED POSE TOPIC: ', LOCALIZED_POSE_TOPIC)
+        print('PUBLISHING OUTPUT REAL TIME POSE TO: ', OUTPUT_TOPIC)
+
         # the two pcds used to compute the relative transformation
-        self.pcd1 = None
-        self.pcd2 = None
+        # self.pcd1 = None
+        # self.pcd2 = None
         # the global transforamtion
-        self.Tg = HomogeneousMatrix()
-
+        # self.Tg = HomogeneousMatrix()
+        #
         # lag
-        self.computation_times = []
-        self.frequency = []
-
-        self.time_diffs = []
-        self.time_sleep_synchro = 1.5
+        # self.computation_times = []
+        # self.frequency = []
+        #
+        # self.time_diffs = []
+        # self.time_sleep_synchro = 1.5
 
     def run(self):
         rospy.spin()
 
-    def odom_callback(self, msg):
+    def localized_pose_callback(self, msg):
         """
         Get last odom reading and append to buffer.
         """
         timestamp = msg.header.stamp.to_sec()
         if self.start_time is None:
             self.start_time = timestamp
-        self.times_odometry.append(timestamp)
+        # self.times_odometry.append(timestamp)
+        pose = Pose()
+        pose.from_message(msg.pose.pose)
+        self.localized_poses_buffer.append(pose, timestamp)
+
+    def odom_callback(self, msg):
+        """
+        Get last odom reading and append to buffer.
+        Given the last received odom T2
+        a) obtain the last received localized pose Tpose.
+        b) get the corresponding timestamp t1.
+        c) get the closest odometry to t1 (odo1 with T1). (maybe in the past).
+        d) compute the relative transformation in odometry with the current received odometry T2: Tr = T1.inv()*T2
+        e) compute the global transform as: Tg = Tpose*Tr
+        """
+        timestamp = msg.header.stamp.to_sec()
+        if self.start_time is None:
+            self.start_time = timestamp
+        # self.times_odometry.append(timestamp)
         pose = Pose()
         pose.from_message(msg.pose.pose)
         self.odombuffer.append(pose, timestamp)
 
-    def pc_callback(self, msg):
-        """
-        Get last pcd reading.
-        Next, perform scanmatching with the last received pcd.
-        CAUTION: the pointcloud and the last received time in the odometry may be very close. As a result,
-        the function get_closest_pose_at_time must be used instead of the function interpolated_pose_at_time
-        get_closest_pose_at_time: the last received odometry, closest to the current time.
-        interpolated_pose_at_time: needs two times
-        """
-        # # current timestamp
-        timestamp = msg.header.stamp.to_sec()
-        Tg = self.perform_local_scanmatching(msg)
-        # publish last
+        # wait to receive at least one localized pose
+        if len(self.localized_poses_buffer) == 0:
+            print("\033[91mCaution!!! No localized pose received yet.\033[0m")
+            return
+        # the current received odometry
+        T2 = pose.T()
+
+        # the last received localized pose
+        Tpose = self.localized_poses_buffer[-1].T()
+        t1 = self.localized_poses_buffer.times[-1]
+
+        # get the interpolated odometry to t1
+        pose, _, _ = self.odombuffer.interpolated_pose_at_time_new(timestamp=t1)
+        T1 = pose.T()
+        # Tr is the relative transformation in terms of odometry
+        Tr = T1.inv()*T2
+        # adding the relative odometry transformationt  the last received localized pose
+        Tg = Tpose*Tr
         if Tg is not None:
+            print('Publishing real time pose')
             self.publish_pose(Tg, timestamp=timestamp)
-        return
+
 
     def publish_pose(self, T, timestamp):
         """
@@ -152,28 +182,28 @@ class ScanmatchingNode:
         msg.pose.pose.orientation.w = orientation.qw
         self.pub.publish(msg)
 
-    def timer_callback_plot_info(self, event):
-        # PLOT LOCALIZATION
-        print('Odombuffer length: ', len(self.odombuffer.times))
-        # print('LidarBuffer length: ', len(self.pcdbuffer.times))
-        odo_positions = self.odombuffer.get_positions()
-        positions_sm = []
-        for i in range(len(self.global_transforms)):
-            T = self.global_transforms[i][0]
-            positions_sm.append(T.pos())
-        positions_sm = np.array(positions_sm)
-        ax1.clear()
-        if len(odo_positions) > 0:
-            ax1.scatter(odo_positions[:, 0], odo_positions[:, 1], marker='.', color='red', label='Odometry')
-        if len(positions_sm) > 0:
-            # positions_sm = np.array(self.positions_sm)
-            ax1.scatter(positions_sm[:, 0], positions_sm[:, 1], marker='.', color='blue', label='Scanmatcher')
-        canvas1.print_figure('plots/run_scanmatcher_plot1.png', bbox_inches='tight')
-        ax2.clear()
-        frequency = np.array(self.frequency)
-        if len(frequency) > 0:
-            ax2.plot(frequency, marker='.', color='red', label='Frequency (Hz)')
-        canvas2.print_figure('plots/run_scanmatcher_plot2.png', bbox_inches='tight')
+    # def timer_callback_plot_info(self, event):
+    #     # PLOT LOCALIZATION
+    #     print('Odombuffer length: ', len(self.odombuffer.times))
+    #     # print('LidarBuffer length: ', len(self.pcdbuffer.times))
+    #     odo_positions = self.odombuffer.get_positions()
+    #     positions_sm = []
+    #     for i in range(len(self.global_transforms)):
+    #         T = self.global_transforms[i][0]
+    #         positions_sm.append(T.pos())
+    #     positions_sm = np.array(positions_sm)
+    #     ax1.clear()
+    #     if len(odo_positions) > 0:
+    #         ax1.scatter(odo_positions[:, 0], odo_positions[:, 1], marker='.', color='red', label='Odometry')
+    #     if len(positions_sm) > 0:
+    #         # positions_sm = np.array(self.positions_sm)
+    #         ax1.scatter(positions_sm[:, 0], positions_sm[:, 1], marker='.', color='blue', label='Scanmatcher')
+    #     canvas1.print_figure(PLOTS_PATH+'/run_scanmatcher_plot1.png', bbox_inches='tight')
+    #     ax2.clear()
+    #     frequency = np.array(self.frequency)
+    #     if len(frequency) > 0:
+    #         ax2.plot(frequency, marker='.', color='red', label='Frequency (Hz)')
+    #     canvas2.print_figure(PLOTS_PATH+'/run_scanmatcher_plot2.png', bbox_inches='tight')
 
     def perform_local_scanmatching(self, msg):
         start = time.time()
@@ -260,7 +290,7 @@ class ScanmatchingNode:
 
 
 if __name__ == "__main__":
-    node = ScanmatchingNode()
+    node = RealTimePoseNode()
     node.run()
 
 

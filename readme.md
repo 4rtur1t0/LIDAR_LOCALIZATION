@@ -1,3 +1,19 @@
+LIDAR LOCALIZATION
+A simple, yet effective, localization using a LiDAR sensor in 3D pointclouds.
+Tested in semi-structured environments that include buildings and gardens.
+
+The package includes:
+- A local scanmatching node. Using Open3D, the node uses a vanilla ICP algorithm to 
+estimate the trajectory of the robot.
+  - A global scanmatching node. This node uses a global pcd pointcloud map that should
+    have been built before (see below). In order to build this map, please use the MAP TOOLS package.
+    This node gets the latest LiDAR pointcloud, gets the latest /localized_pose as published by the graph localizer, performs
+    a scanmatching between the LiDAR pointcloud and the global map and publishes the result. If the initial estimation
+    is approximately correct, the ICP refines the estimation and usually allows to refine it. The output is considered
+    a prior on the localized pose and is also integrated by the graph localizer.
+    - A graph localizer. This node estimates the robot trajectory using the
+    - A node that check the timestamps of all the nodes to ensure that everything is running real time.
+
 STEPS NEEDED TO LOCATE IN THE MAP
     - Build a map. Store in a directory.
     - Launch the ARUCO obsevations node.

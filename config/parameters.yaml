@@ -1,4 +1,4 @@
-
+run_online: false
 
 odo:
   delta_threshold_s: 1.0 # max time distance to the two measurements for interpolation.
@@ -21,12 +21,16 @@ graphslam:
   map_sm_global_pose: '/map_sm_global_pose'
   # the output from a scanmatching to map node (global scanmatching)
   localized_pose_output_topic: '/localized_pose'
+#  plots_path: '/home/administrator/husky_noetic_ws/src/husky_3d_localization/plots'
+  plots_path: '/home/arvc/Escritorio/SOFTWARE_ARVC_ARTURO/LOCALIZATION/LIDAR_LOCALIZATION/plots'
+
 
 # the scanmatcher is used for sequential scanmatching and to find registrations between non-consecutive pointclouds
 scanmatcher:
   odometry_input_topic: '/husky_velocity_controller/odom'
   # from a lidar
   pointcloud_input_topic: '/ouster/points_low_rate'
+#  pointcloud_input_topic: '/ouster/points'
   # the output estimated odometry from local scanmatching
   odometry_output_topic: '/odometry_lidar_scanmatching'
   # distance in odometry to compute a local scanmatching
@@ -45,6 +49,8 @@ scanmatcher:
   min_height: -5.0
   max_height: 10.0
   min_reflectivity: 20
+#  plots_path: '/home/administrator/husky_noetic_ws/src/husky_3d_localization/plots'
+  plots_path: '/home/arvc/Escritorio/SOFTWARE_ARVC_ARTURO/LOCALIZATION/LIDAR_LOCALIZATION/plots'
 
   # normal computation
   normals:
@@ -71,8 +77,13 @@ scanmatcher_to_map:
   # the node also publishes the global map, as read from the file
   global_map: '/global_map'
   # the map filename
-#  map_filename: 'map_data/global_map.pcd'
   map_filename: 'map_data/global_map_filtered.pcd'
+#  map_filename: '/home/administrator/husky_noetic_ws/src/husky_3d_localization/map_data/global_map_filtered.pcd'
+#  plots_path: '/home/administrator/husky_noetic_ws/src/husky_3d_localization/plots'
+  plots_path: '/home/arvc/Escritorio/SOFTWARE_ARVC_ARTURO/LOCALIZATION/LIDAR_LOCALIZATION/plots'
+
+real_time_pose_node:
+  localized_pose_real_time_output_topic: '/localized_pose_real_time'
 
 # unused now
 gps:

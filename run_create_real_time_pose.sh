@@ -2,4 +2,4 @@
 PYTHON_VENV=~/Applications/venv2
 source $PYTHON_VENV/bin/activate
 export PYTHONPATH=$PYTHON_VENV/lib/python3.8/site-packages:/opt/ros/noetic/lib/python3/dist-packages:/usr/lib/python3/dist-packages:
-python src/run_scanmatcher.py
+python src/run_create_real_time_pose.py

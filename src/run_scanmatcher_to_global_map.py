@@ -1,3 +1,4 @@
+#!/home/administrator/husky_noetic_ws/src/husky_3d_localization/.venv/bin/python3
 """
     A node that performs scanmatching against a global map.
     Algorithm:
@@ -13,6 +14,8 @@
 
     As a result, we end up having another prior3Dfactor observation on the state X(i).
 """
+import sys
+sys.path.append('/home/administrator/husky_noetic_ws/src/husky_3d_localization/')  # Add the parent directory to the path
 import rospy
 from nav_msgs.msg import Odometry
 from observations.lidarbuffer import LidarBuffer, LidarScan
@@ -29,6 +32,7 @@ import sensor_msgs.point_cloud2 as pc2
 from sensor_msgs.msg import PointCloud2, PointField
 from std_msgs.msg import Header
 from config import PARAMETERS
+import os
 
 fig1, ax1 = plt.subplots(figsize=(12, 8))
 ax1.set_title('SCANMATCHING path positions')
@@ -48,6 +52,8 @@ INITIAL_ESTIMATED_POSE = PARAMETERS.config.get('scanmatcher_to_map').get('locali
 MAP_SM_GLOBAL_POSE_TOPIC = PARAMETERS.config.get('scanmatcher_to_map').get('map_sm_prior_output_topic') #'/map_sm_global_pose'
 # PUBLISH THE 3D pointcloud global map
 GLOBAL_MAP_TOPIC = PARAMETERS.config.get('scanmatcher_to_map').get('global_map')
+PLOTS_PATH = PARAMETERS.config.get('scanmatcher_to_map').get('plots_path')
+os.makedirs(PLOTS_PATH, exist_ok=True)
 
 
 class GlobalMap():
@@ -134,6 +140,8 @@ class GlobalScanMatchingROSNode:
         print('Loading MAP: ', MAP_FILENAME)
         self.global_map = GlobalMap(map_filename=MAP_FILENAME)
         print('Map loaded!')
+        print('GLOBAL MAP INFO: ')
+        print(self.global_map)
 
         print("Voxelizando la nube for publishing...")
         pointcloud_publish = self.global_map.global_map.voxel_down_sample(voxel_size=0.5)
@@ -388,7 +396,8 @@ class GlobalScanMatchingROSNode:
             ax1.scatter(all_refined_estimations[:, 0],
                         all_refined_estimations[:, 1], marker='.', color='red')
         ax1.legend()
-        canvas1.print_figure('plots/run_scanmatcher_to_map_plot.png', bbox_inches='tight', dpi=300)
+        
+        canvas1.print_figure(PLOTS_PATH+'/run_scanmatcher_to_map_plot.png', bbox_inches='tight', dpi=300)
 
 
         ax2.clear()
@@ -397,7 +406,7 @@ class GlobalScanMatchingROSNode:
             ax2.plot(diff_times_pcd_pose, marker='.', color='blue', label='Initial pose estimation idff times')
 
         ax2.legend()
-        canvas2.print_figure('plots/run_scanmatcher_to_map_plot2_times.png', bbox_inches='tight', dpi=300)
+        canvas2.print_figure(PLOTS_PATH+'/run_scanmatcher_to_map_plot2_times.png', bbox_inches='tight', dpi=300)
 
 
     def run(self):

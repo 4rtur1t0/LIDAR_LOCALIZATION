@@ -1,7 +1,11 @@
+#!/usr/bin/env python3
 """
     A node that subscribes to the important topics and prints a
     plot (png, in /plots) with the last published times. For debugging purposes.
 """
+
+import sys
+sys.path.append('/home/administrator/husky_noetic_ws/src/husky_3d_localization/')  # Add the parent directory to the path
 import rospy
 import numpy as np
 from nav_msgs.msg import Odometry

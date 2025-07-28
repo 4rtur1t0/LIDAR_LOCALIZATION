@@ -1,0 +1,7 @@
+<launch>
+    <node pkg="husky_3d_localization" type="run_scanmatcher_to_global_map.py" name="scanmatcher_to_global_map" output="screen" />
+    <node pkg="husky_3d_localization" type="run_scanmatcher.py" name="scanmatcher" output="screen" />
+    <node pkg="husky_3d_localization" type="run_graph_localizer.py" name="run_graph_localizer" output="screen" />
+    <node pkg="husky_3d_localization" type="map_tf_broadcaster.py" name="map_base_link_tf" output="screen" />
+    
+</launch>

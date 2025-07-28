@@ -1,3 +1,4 @@
+#!/home/administrator/husky_noetic_ws/src/husky_3d_localization/.venv/bin/python3
 """
 Using GTSAM in a GraphSLAM context for Localization.
 
@@ -18,6 +19,9 @@ We are integrating odometry, scanmatching odometry and global scanmatching.
     This node, uses the initial /localized_pose, computes a scanmatching and publishes the "refined estimation". Again,
     an interpolation is found to apply the prior to some to the nodes in the graph.
 """
+import sys
+sys.path.append('/home/administrator/husky_noetic_ws/src/husky_3d_localization/')  # Add the parent directory to the path
+# sys.path.append('/home/arvc/Escritorio/SOFTWARE_ARVC_ARTURO/LOCALIZATION/LIDAR_LOCALIZATION')
 from collections import deque
 import rospy
 import numpy as np
@@ -30,11 +34,13 @@ from observations.posesbuffer import PosesBuffer, Pose
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from graphSLAM.graphSLAM import GraphSLAM
-# from artelib.homogeneousmatrix import HomogeneousMatrix
-# from artelib.vector import Vector
-# from artelib.euler import Euler
 import time
 from config import PARAMETERS
+import os
+from geometry_msgs.msg import PoseWithCovarianceStamped
+import tf2_ros
+from geometry_msgs.msg import TransformStamped
+
 
 fig1, ax1 = plt.subplots(figsize=(12, 8))
 ax1.set_title('MAP/poses')
@@ -57,14 +63,31 @@ MAP_SM_GLOBAL_POSE_TOPIC = PARAMETERS.config.get('graphslam').get('map_sm_global
 # the localized estimation, based on odometry, local scanmatching and global scanmatching '/localized_pose'
 OUTPUT_TOPIC = PARAMETERS.config.get('graphslam').get('localized_pose_output_topic')
 # GNSS_TOPIC = '/gnss/fix_fake'
+PLOTS_PATH = PARAMETERS.config.get('scanmatcher').get('plots_path')
+os.makedirs(PLOTS_PATH, exist_ok=True)
 
+# run in ros online or not
+RUN_ONLINE = PARAMETERS.config.get('run_online')
+# RUN_ONLINE = True
 
 class LocalizationROSNode:
     def __init__(self):
-        pose0 = Pose({'x': 0.0, 'y': 0.0, 'z': 0.0,
-                      'qx': 0.00, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0})
-        # pose0 = Pose({'x': 24.0, 'y': -13.05, 'z': 0.0,
-        #               'qx': 0.00, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0})
+        rospy.init_node('graph_localization_node')
+        self.initial_pose_received = False
+        rospy.Subscriber("/initialpose", PoseWithCovarianceStamped, self.initial_pose_cb)
+        rate = rospy.Rate(1)  # 10 Hz
+        print('Waiting for initial pose to be set by the user in the 2D map')
+        while (not self.initial_pose_received) and RUN_ONLINE:
+            rate.sleep()
+        if self.initial_pose_received:
+            pose0 = Pose({'x': self.initial_pose.pose.pose.position.x, 'y': self.initial_pose.pose.pose.position.y,
+                      'z': self.initial_pose.pose.pose.position.z, 'qx': self.initial_pose.pose.pose.orientation.x, 
+                      'qy': self.initial_pose.pose.pose.orientation.y, 'qz':self.initial_pose.pose.pose.orientation.z, 
+                      'qw': self.initial_pose.pose.pose.orientation.w})
+            print('Initial pose set by user: ', pose0)
+        else:
+            pose0 = Pose({'x': 0.0, 'y': 0.0, 'z': 0.0,
+                          'qx': 0.0, 'qy': 0.0, 'qz': 0.0, 'qw': 1.0})
         # transforms
         T0 = pose0.T() #HomogeneousMatrix()
         # T LiDAR-GPS unused
@@ -119,14 +142,13 @@ class LocalizationROSNode:
         # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO3-2025-06-16-13-49-28'
         directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO4-2025-06-16-15-56-11'
         # directory_ground_truth_path = '/media/arvc/INTENSO/DATASETS/INDOOR_OUTDOOR/IO5-2025-06-16-17-53-54'
-        # directory_ground_truth_path = None
+        directory_ground_truth_path = None
         self.robotpath = PosesBuffer(maxlen=10000)
         if directory_ground_truth_path is not None:
             self.robotpath.read_data_tum(directory=directory_ground_truth_path, filename='/robot0/SLAM/data_poses_tum.txt')
 
         # ROS STUFFF
         print('Initializing global scanmatching node!')
-        rospy.init_node('graph_localization_node')
         print('Subscribing to PCD, GNSS')
         print('WAITING FOR MESSAGES!')
         print('PARAMETERS')
@@ -140,6 +162,7 @@ class LocalizationROSNode:
         # Set up a timer to periodically update the plot
         rospy.Timer(rospy.Duration(3), self.plot_timer_callback)
         # Publisher. Yes Declaring the topic to be published: /localized_pose
+        
         self.pub = rospy.Publisher(OUTPUT_TOPIC, Odometry, queue_size=10)
 
         # TIME measurement
@@ -151,6 +174,28 @@ class LocalizationROSNode:
         print('SUBSCRIBED TO INPUT SCANMATCHING ODOMETRY TOPIC: ', ODOMETRY_SCANMATCHING_LIDAR_TOPIC)
         print('SUBSCRIBED TO INPUT SCANMATCHING TO MAP GLOBAL PRIOR: ', MAP_SM_GLOBAL_POSE_TOPIC)
         print('PUBLISHING OUTPUT ESTIMATED POSE: ', OUTPUT_TOPIC)
+
+    def initial_pose_cb(self, data):
+        """
+            Set the initial pose of the robot, given by the user in the 2D map.
+        """
+        print('Setting initial pose: ')
+        if data != None:
+            self.initial_pose_received = True
+            self.initial_pose = data
+            self.tf_broadcaster = tf2_ros.TransformBroadcaster()
+            initial_tf = TransformStamped()
+            initial_tf.header.stamp = rospy.Time.now()
+            initial_tf.header.frame_id = "odom"  # Typically "odom"
+            initial_tf.child_frame_id = "base_link"    # Typically "base_link       
+            initial_tf.transform.translation.x = data.pose.pose.position.x
+            initial_tf.transform.translation.y = data.pose.pose.position.y
+            initial_tf.transform.translation.z = data.pose.pose.position.z
+            initial_tf.transform.rotation.x = data.pose.pose.orientation.x
+            initial_tf.transform.rotation.y = data.pose.pose.orientation.y
+            initial_tf.transform.rotation.z = data.pose.pose.orientation.z
+            initial_tf.transform.rotation.w = data.pose.pose.orientation.w
+            self.tf_broadcaster.sendTransform(initial_tf)
 
     def odom_callback(self, msg):
         """
@@ -259,8 +304,8 @@ class LocalizationROSNode:
         orientation = T.Q()
         msg = Odometry()
         msg.header.stamp = rospy.Time.from_sec(timestamp)
-        msg.header.frame_id = "map"
-        msg.child_frame_id = "odom"
+        msg.header.frame_id = "odom"
+        msg.child_frame_id = "base_link"
         msg.pose.pose.position.x = position[0]
         msg.pose.pose.position.y = position[1]
         msg.pose.pose.position.z = position[2]
@@ -269,6 +314,7 @@ class LocalizationROSNode:
         msg.pose.pose.orientation.z = orientation.qz
         msg.pose.pose.orientation.w = orientation.qw
         self.pub.publish(msg)
+
 
     def plot_timer_callback(self, event):
         print('Plotting info')
@@ -291,7 +337,10 @@ class LocalizationROSNode:
             ax1.scatter(map_robot_path_positions[:, 0],
                         map_robot_path_positions[:, 1], marker='.', s=1, color='green', label='Map path')
         ax1.legend()
-        canvas1.print_figure('plots/run_graph_localizer_plot1.png', bbox_inches='tight', dpi=300)
+
+        
+
+        canvas1.print_figure(PLOTS_PATH+'/run_graph_localizer_plot1.png', bbox_inches='tight', dpi=300)
 
         # plot other info
         ax2.clear()
@@ -301,7 +350,7 @@ class LocalizationROSNode:
             ax2.plot(update_graph_timer_callback_times, marker='.', color='blue')
         if len(publication_delay_times):
             ax2.plot(publication_delay_times, marker='.', color='red')
-        canvas2.print_figure('plots/run_graph_localizer_plot2.png', bbox_inches='tight', dpi=300)
+        canvas2.print_figure(PLOTS_PATH+'/run_graph_localizer_plot2.png', bbox_inches='tight', dpi=300)
 
         # plot the nodes in the graph
         # nodes that have been related by observations
@@ -327,7 +376,7 @@ class LocalizationROSNode:
             ax3.plot(indices, 4.0*np.ones(ln), marker='.', color='black',
                      label='MAP Scanmatching prior observations')
         ax3.legend()
-        canvas3.print_figure('plots/run_graph_localizer_plot3.png', bbox_inches='tight', dpi=300)
+        canvas3.print_figure(PLOTS_PATH+'/run_graph_localizer_plot3.png', bbox_inches='tight', dpi=300)
 
     def run(self):
         rospy.spin()
